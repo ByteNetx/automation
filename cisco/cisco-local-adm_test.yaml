@@ -1,0 +1,12 @@
+---
+devices:
+  cisco_ios:
+    - 
+  cisco_nxos:
+    - 
+cfg-data:
+  current_admin:
+    - 
+  new_admin: 
+  template: cisco_local_admin_template.j2
+credFile: myCredetials.bin
