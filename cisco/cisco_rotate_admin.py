@@ -49,7 +49,7 @@ def runner():
     if args.u:
         username = args.u
     else:
-        username = os.getlogin().split("@")[0]
+        username = os.getlogin()
 
     basePath = Path.home() / 'pyenv3.9' / 'cisco'
     devFile = f"{basePath}/data/{args.f}"
@@ -125,4 +125,5 @@ def runner():
     print('Task completed!')
 if __name__ == "__main__":
     runner()
+
 
