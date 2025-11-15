@@ -1,4 +1,4 @@
-# The scripts automate rotation of locally configured admin accounts and enable secrets on Cisco devices
+# Automation rotating locally configured admin accounts and enable secrets on Cisco devices
 
 # Supported Devices
 - Cisco IOS
