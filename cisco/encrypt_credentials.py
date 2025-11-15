@@ -18,7 +18,8 @@ encrypted_credentials = f.encrypt(cred_bytes)
 with open(credFile, 'wb') as f:
     f.write(encrypted_credentials)
 
-print("Add the below encrypt key to the CyberArk, which is required\n to run admin rotation script!!!\n")
+print("\nAdd the below encrypt key to the CyberArk, which is required\n to run admin rotation script!!!\n")
 print("="*len("Add the below encrypt key to the CyberArk, which is required"))
 
 print(Fore.BLUE+myKey.decode('utf-8'))
+
