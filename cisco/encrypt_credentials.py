@@ -1,5 +1,8 @@
 from cryptography.fernet import Fernet
+from colorama import Fore, Back, Style, init
 from pathlib import Path
+
+init(autoreset=True) # Automatically resets style after each print
 
 basePath = Path.home() / 'pyenv3.9' / 'cisco'
 credFile = f"{basePath}/data/myCredetials.bin"
@@ -17,4 +20,5 @@ with open(credFile, 'wb') as f:
 
 print("Add the below encrypt key to the CyberArk, which is required\n to run admin rotation script!!!\n")
 print("="*len("Add the below encrypt key to the CyberArk, which is required"))
-print(myKey.decode('utf-8'))
+
+print(Fore.BLUE+myKey.decode('utf-8'))
