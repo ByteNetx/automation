@@ -99,32 +99,31 @@ def runner():
                 logwriter.write(f"+++++++++++++++ {timestamp}-{device['host']}-{devName} +++++++++++++++\n")
                 cis_cfg = cisco_template.render(cfgData)
                 cis_cfg = "".join([s for s in cis_cfg.splitlines(True) if (not re.search(r"^\s*$", s))])
-                #deploy_cfg = ssh_connect.send_config_set(cis_cfg.split('\n'))
-                print(cis_cfg)
+                deploy_cfg = ssh_connect.send_config_set(cis_cfg.split('\n'))
     
                 showUser = ssh_connect.send_command('show run | i username')
                 output = re.findall(r"username\s(\S+)\s",showUser)
                 if output:
                     for user in cfgData['current_admin']:
                         if user in output:
-                            #deploy_cfg += ssh_connect.send_multiline_timing(
-                            #    ["conf term",f"no username {user}","\n","end"]
-                            #)
-                            print(["conf term",f"no username {user}","\n","end"])
+                            deploy_cfg += ssh_connect.send_multiline_timing(
+                                ["conf term",f"no username {user}","\n","end"]
+                            )
+
                 if devType == "cisco_ios":
                     save_cfg = ssh_connect.save_config()
                 elif devType == "cisco_nxos":
                     save_cfg = ssh_connect.send_multiline_timing(
                         ["copy running-config startup-config","\n"]
                     )
-                #logwriter.write(f"{showUser}\n\n{deploy_cfg}\n\n{save_cfg}\n\n")
-                print(save_cfg)
+                logwriter.write(f"{showUser}\n\n{deploy_cfg}\n\n{save_cfg}\n\n")
                 ssh_connect.disconnect()
     
     logwriter.close()
     print('Task completed!')
 if __name__ == "__main__":
     runner()
+
 
 
 
