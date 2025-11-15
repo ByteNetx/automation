@@ -1,5 +1,5 @@
 #!/usr/bin/python
-import requests, xmltodict, csv, os, calendar, datetime, argparse, yaml, getpass
+import requests, xmltodict, os, calendar, datetime, argparse, yaml, getpass
 import pandas as pd
 from xlsxwriter import Workbook
 from xlsxwriter.color import Color
@@ -149,3 +149,4 @@ def runner():
 
 if __name__ == "__main__":
     runner()
+
