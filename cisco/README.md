@@ -15,7 +15,7 @@
   |-- templates
       |-- cisco_local_admin_template.j2  # Configuration template
   |-- cisco_rotate_admin.py              # Main rotation script
-  |-- encrypt_credentials.py             # Script to generate cryption key and create encrypted credentials
+  |-- encrypt_credentials.py             # Script to generate encryption key and to create encrypted credentials
 </pre>
 
 # Work Flows
