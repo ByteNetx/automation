@@ -103,7 +103,7 @@ def runner():
                 print(cis_cfg)
     
                 showUser = ssh_connect.send_command('show run | i username')
-                output = re.findall(r"username\s(rj[f|l]emerg\w+)\s",showUser)
+                output = re.findall(r"username\s(t[f|l]adm\d{1,3})\s",showUser)
                 if output:
                     for user in cfgData['current_admin']:
                         if user in output:
@@ -125,3 +125,4 @@ def runner():
     print('Task completed!')
 if __name__ == "__main__":
     runner()
+
