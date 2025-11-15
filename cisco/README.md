@@ -1,9 +1,10 @@
 # The scripts automate rotation of locally configured admin accounts and enable secrets on Cisco devices.
 
 # Supported Devices
-- Cisco IOS/IOS-XE
+- Cisco IOS
+- Cisoc IOS-XE
 - Cisco NX-OS
-- 
+
 # Directory Structure
 <pre>
   pyenv3.9
