@@ -5,12 +5,17 @@
 - Cisoc IOS-XE
 - Cisco NX-OS
 
-# Directory Structure
+# File Structure
 <pre>
   pyenv3.9
   |-- data
+      |-- cisco-local-adm_test.yaml
+      |-- myCredentials.bin
   |-- logs
   |-- templates
+      |-- cisco_local_admin_template.j2
+  |-- cisco_rotate_admin.py
+  |-- encrypt_credentials.py
 </pre>
 
 # Work Flows
