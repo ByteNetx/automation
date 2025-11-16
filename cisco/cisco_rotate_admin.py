@@ -49,7 +49,7 @@ def runner():
     class PASSWORD(argparse.Action):
         def __call__(self, parser, namespace, values, option_string):
             if values is None:
-                values = getpass.getpass()
+                values = getpass.getpass(Fore.GREEN+"Your password:")
                 setattr(namespace, self.dest, values)
 
     banner()
