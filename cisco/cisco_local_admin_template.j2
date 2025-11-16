@@ -1,2 +1,6 @@
+{%if dev_type == "cisco_ios"%}
 username {{new_admin}} algorithm-type scrypt secret {{new_passwd}}
 enable algorithm-type scrypt secret {{new_enable}}
+{%elif dev_type == "cisco_nxos"%}
+username {{new_admin}} password {{new_passwd}} role network-admin
+{%endif%}
