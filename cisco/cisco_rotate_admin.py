@@ -2,10 +2,28 @@ import argparse, getpass, datetime, re, os
 import yaml, jinja2, sys
 from cryptography.fernet import Fernet
 from pathlib import Path
+from colorama import Fore, Back, Style, init
 from netmiko import ConnectHandler
 from netmiko import NetmikoTimeoutException
 from netmiko import NetmikoAuthenticationException
 
+init(autoreset=True)
+
+def banner():
+    print(Fore.YELLOW+"""
+#-----------------------------------------------------------------#
+#  The script rotates locally configured admin accounts & enable  #
+#  secrets on Cisco devices. After succussfully running the       #
+#  script, please verify configuration changes by checking the    #
+#  change logs in the following location:                         # 
+#    ~/pyenv3.9/cisco/logs/                                       #
+#                                                                 #
+#  Important:                                                     #
+#    Remove the change log file after validation, since it        #
+#    contains admin password and enable secret in plain text!     #
+#-----------------------------------------------------------------#
+""")
+    
 def connect(device,logwriter):
     global ssh_connect
     try:
@@ -34,6 +52,8 @@ def runner():
                 values = getpass.getpass()
                 setattr(namespace, self.dest, values)
 
+    banner()
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--u', help='Username', type=str,
@@ -51,7 +71,7 @@ def runner():
     else:
         username = os.getlogin()
 
-    basePath = Path.home() / 'pyenv3.9' / 'cisco'
+    basePath = Path.home() / 'netdev' / 'python-env' / 'cisco'
     devFile = f"{basePath}/data/{args.f}"
 
     with open(devFile, 'r') as f:
@@ -69,7 +89,7 @@ def runner():
     with open(credFile, "rb") as f:
         encrypted_credentials= f.read()
     
-    myKey = input("Enter decryption key:")
+    myKey = input(Fore.GREEN+"Enter decryption key:"+Fore.RESET)
     f  = Fernet(myKey)
     credentials = f.decrypt(encrypted_credentials).decode()
     cfgData.update({
@@ -133,4 +153,3 @@ def runner():
     print('Task completed!')
 if __name__ == "__main__":
     runner()
-
