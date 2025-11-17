@@ -2,6 +2,7 @@ import argparse, getpass, datetime, re, os
 import yaml, jinja2, sys
 from cryptography.fernet import Fernet
 from pathlib import Path
+from hash_type9 import hash_type9
 from colorama import Fore, Back, Style, init
 from netmiko import ConnectHandler
 from netmiko import NetmikoTimeoutException
@@ -13,14 +14,11 @@ def banner():
     print(Fore.YELLOW+"""
 #-----------------------------------------------------------------#
 #  The script rotates locally configured admin accounts & enable  #
-#  secrets on Cisco devices. After succussfully running the       #
-#  script, please verify configuration changes by checking the    #
-#  change logs in the following location:                         # 
-#    ~/pyenv3.9/cisco/logs/                                       #
+#  secrets on Cisco devices. Configuration changes made to the    #
+#  target devices can be verified by checking the change logs in  #
+#  the following location:                                        #
 #                                                                 #
-#  Important:                                                     #
-#    Remove the change log file after validation, since it        #
-#    contains admin password and enable secret in plain text!     #
+#   ~/pyenv3.9/cisco/logs/                                        #
 #-----------------------------------------------------------------#
 """)
     
@@ -84,17 +82,11 @@ def runner():
         err = f"Missing the required configuration parameters in the following device file!\n{devFile}"
         sys.exit(err)
     
-    credFile = f"{basePath}/data/{data['credFile']}"
-
-    with open(credFile, "rb") as f:
-        encrypted_credentials= f.read()
-    
-    myKey = input(Fore.GREEN+"Enter decryption key:"+Fore.RESET)
-    f  = Fernet(myKey)
-    credentials = f.decrypt(encrypted_credentials).decode()
+    passwd = hash_type9()
+    enable = hash_type9()
     cfgData.update({
-        'new_passwd': credentials.split()[0].strip(),
-        'new_enable': credentials.split()[1].strip()
+        'new_passwd': passwd,
+        'new_enable': enable
     })
     
     templatePath = f"{basePath}/templates"
