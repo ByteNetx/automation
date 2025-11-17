@@ -14,7 +14,7 @@
   |-- templates
       |-- cisco_local_admin_template.j2  # Configuration template
   |-- cisco_rotate_admin.py              # Main rotation script
-  |-- hash_type9.py                      # Script to generate cisco type 9 secret
+  |-- hash_type9.py                      # Module converting to cisco type 9 secret
 </pre>
 
 
