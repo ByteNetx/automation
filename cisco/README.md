@@ -18,4 +18,4 @@
 </pre>
 
 
-!Run the main rotation script "cisco_rotate_admin.py" to rotate admin accounts and enable secrets.
+Run the main rotation script "cisco_rotate_admin.py" to rotate admin accounts and enable secrets.
