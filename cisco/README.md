@@ -3,21 +3,19 @@
 # Supported Devices
 - Cisco IOS
 - Cisoc IOS-XE
-- Cisco NX-OS
+- Cisco NX-OS (10.3(1)F or above)
 
 # File Structure
 <pre>
   pyenv3.9
   |-- data
       |-- cisco-local-adm_test.yaml      # Device YAML file
-      |-- myCredentials.bin              # Encrypted admin password and enable secret
   |-- logs
   |-- templates
       |-- cisco_local_admin_template.j2  # Configuration template
   |-- cisco_rotate_admin.py              # Main rotation script
-  |-- encrypt_credentials.py             # Script to generate encryption key and to create encrypted credentials
+  |-- hash_type9.py                      # Script to generate cisco type 9 secret
 </pre>
 
-# Work Flows
-1. Generate an encryption key and create an encrypted credential file by running "encrypt_credentials.py script"
-2. Run the main rotation script "cisco_rotate_admin.py" to rotate admin accounts and enable secrets.
+
+!Run the main rotation script "cisco_rotate_admin.py" to rotate admin accounts and enable secrets.
