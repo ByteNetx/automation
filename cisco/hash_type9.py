@@ -1,4 +1,4 @@
-import random, base64
+import random, base64, re
 import sys, hashlib
 from colorama import Fore, Back, Style, init
 
@@ -22,17 +22,26 @@ def banner():
 ############################################################
 """)
 
-def pwd_check(pwd):
-    invalid_chars = r"?\""
-    if any(char in invalid_chars for char in pwd):
-        raise InvalidPassword(r'? and \" are invalid characters for Cisco passwords.')
+def validate_password(pwd):
+    invalid_chars = r"(?=.+?[/?:,.\'\\])"
+    password_pattern = r"^(?=.+?[A-Z])(?=.+?[a-z])(?=.+?[0-9])(?=.+?[!@#$%^&*()_+=\[\]\{\};\"<>|]).{16,16}$"
+    if not re.fullmatch(password_pattern, pwd) or re.search(r"\s+", pwd) or re.search(invalid_chars, pwd):
+        raise InvalidPassword(r"""
+Password does not meet the policy policy:
+ - Password must be at least 16 characters long
+ - Password must contain at least one lowercase letter
+ - Password must contain at least one uppercase letter
+ - Password must contain at least one digit
+ - Password must contain at least one of the following special characters
+     !@#$%^&*()_+\[\]\{\};\"<>|
+""")
 
 def hash_type9():
     banner()
     while True:
         pwd = input(Fore.GREEN+"Enter a plain text password:"+Fore.RESET)
         try:
-            pwd_check(pwd)
+            validate_password(pwd)
         except InvalidPassword as exception_string:
             print(exception_string)
             pass
