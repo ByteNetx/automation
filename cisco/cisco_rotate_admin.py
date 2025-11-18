@@ -2,7 +2,7 @@ import argparse, getpass, datetime, re, os
 import yaml, jinja2, sys
 from cryptography.fernet import Fernet
 from pathlib import Path
-from hash_type9 import hash_type9
+from password_hash import hash_type8, hash_type9
 from colorama import Fore, Back, Style, init
 from netmiko import ConnectHandler
 from netmiko import NetmikoTimeoutException
@@ -145,3 +145,4 @@ def runner():
     print('Task completed!')
 if __name__ == "__main__":
     runner()
+
