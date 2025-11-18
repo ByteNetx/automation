@@ -15,10 +15,10 @@ class InvalidPassword(Exception):
     """
     pass
 
-def banner():
-    print("""
+def banner(Type):
+    print(f"""
 ############################################################
-# Converts a plain text password into a Cisco Type9 secret #
+# Converts a plain text password into a Cisco Type{Type} secret #
 ############################################################
 """)
 
@@ -36,8 +36,8 @@ Password does not meet the policy policy:
      !@#$%^&*()_+\[\]\{\};\"<>|
 """)
 
-def hash_type9():
-    banner()
+def hash_type8():
+    banner(8)
     while True:
         pwd = input(Fore.GREEN+"Enter a plain text password:"+Fore.RESET)
         try:
@@ -53,7 +53,31 @@ def hash_type9():
                 salt_chars.append(random.choice(cisco_b64chars))
             salt = "".join(salt_chars)
             # Create the hash
-            hash = hashlib.scrypt(pwd.encode(), salt=salt.encode(), n=16384, r=1, p=1, dklen=32)
+            hash = hashlib.pbkdf2_hmac('sha256', pwd.encode('utf-8'), salt.encode(), 20000, 32)
+            # Convert the hash from Standard Base64 to Cisco Base64
+            hash = base64.b64encode(hash).decode().translate(b64table)[:-1]
+            # Print the hash in the Cisco IOS CLI format
+            pwd_type9 = f'$8${salt}${hash}'
+            return pwd_type9
+
+def hash_type9():
+    banner(9)
+    while True:
+        pwd = input(Fore.GREEN+"Enter a plain text password:"+Fore.RESET)
+        try:
+            validate_password(pwd)
+        except InvalidPassword as exception_string:
+            print(exception_string)
+            pass
+        except KeyboardInterrupt:
+            sys.exit()
+        else:
+            salt_chars = []
+            for _ in range(14):
+                salt_chars.append(random.choice(cisco_b64chars))
+            salt = "".join(salt_chars)
+            # Create the hash
+            hash = hashlib.scrypt(pwd.encode('utf-8'), salt=salt.encode(), n=16384, r=1, p=1, dklen=32)
             # Convert the hash from Standard Base64 to Cisco Base64
             hash = base64.b64encode(hash).decode().translate(b64table)[:-1]
             # Print the hash in the Cisco IOS CLI format
