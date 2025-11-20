@@ -57,8 +57,8 @@ def hash_type8():
             # Convert the hash from Standard Base64 to Cisco Base64
             hash = base64.b64encode(hash).decode().translate(b64table)[:-1]
             # Print the hash in the Cisco IOS CLI format
-            pwd_type9 = f'$8${salt}${hash}'
-            return pwd_type9
+            pwd_type8 = f'$8${salt}${hash}'
+            return pwd_type8
 
 def hash_type9():
     banner(9)
