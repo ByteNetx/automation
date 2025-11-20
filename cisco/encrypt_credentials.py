@@ -1,48 +1,85 @@
+#!"C:\Users\tyu1\pyenv3.9\Scripts\python.exe"
 from cryptography.fernet import Fernet
 from colorama import Fore, Back, Style, init
 from pathlib import Path
+import argparse, os, sys
 
 init(autoreset=True) # Automatically resets style after each print
 
-def banner():
-    print(Fore.YELLOW+r"""
-**********************************************************************************
-*   ______                             _      _____                    _         *
-*  |  ____|                           | |    / ____|                  | |        *
-*  | |__   _ __   ___ _ __ _   _ _ __ | |_  | (___   ___  ___ _ __ ___| |_ ___   *
-*  |  __| | '_ \ / __| '__| | | | '_ \| __|  \___ \ / _ \/ __| '__/ _ \ __/ __|  *
-*  | |____| | | | (__| |  | |_| | |_) | |_   ____) |  __/ (__| | |  __/ |_\__ \  *
-*  |______|_| |_|\___|_|   \__, | .__/ \__| |_____/ \___|\___|_|  \___|\__|___/  *
-*                           __/ | |                                              *
-*                          |___/|_|                                              *
-**********************************************************************************
+def banner(action):
+    if action == 'encrypt':
+        print(Fore.YELLOW+r"""
+******************************************************************************
+*  _____                             _     ____                     _        *
+* | ____|_ __   ___ _ __ _   _ _ __ | |_  / ___|  ___  ___ _ __ ___| |_ ___  *
+* |  _| | '_ \ / __| '__| | | | '_ \| __| \___ \ / _ \/ __| '__/ _ \ __/ __| *
+* | |___| | | | (__| |  | |_| | |_) | |_   ___) |  __/ (__| | |  __/ |_\__ \ *
+* |_____|_| |_|\___|_|   \__, | .__/ \__| |____/ \___|\___|_|  \___|\__|___/ *
+*                        |___/|_|                                            *
+******************************************************************************
 """)
-def app_run():
-    basePath = Path.home() / 'netdev' / 'python-env' / 'cisco'
-    credFile = f"{basePath}/data/myCredetials.bin"
-    
-    # Generate a key that will be used to encrypt the credentials
+    elif action == 'decrypt':
+        print(Fore.YELLOW+r"""
+*****************************************************************************
+*  ____                             _     ____                     _        *
+* |  _ \  ___  ___ _ __ _   _ _ __ | |_  / ___|  ___  ___ _ __ ___| |_ ___  *
+* | | | |/ _ \/ __| '__| | | | '_ \| __| \___ \ / _ \/ __| '__/ _ \ __/ __| *
+* | |_| |  __/ (__| |  | |_| | |_) | |_   ___) |  __/ (__| | |  __/ |_\__ \ *
+* |____/ \___|\___|_|   \__, | .__/ \__| |____/ \___|\___|_|  \___|\__|___/ *
+*                       |___/|_|                                            *
+*****************************************************************************
+""")
+def encrypt(credFile):
+    # Generate an encryption key that will be used to encrypt the credentials
     myKey = Fernet.generate_key()
     f = Fernet(myKey)
     
-    admin_passwd = input(Fore.GREEN+"Enter admin password in plain text:"+Fore.RESET)
-    enable_secret = input(Fore.GREEN+"Enter enable secret in plain text:"+Fore.RESET)
+    secret = input(Fore.GREEN+"Enter your secret to encrypt:"+Fore.RESET)
 
-    credentials = f"{admin_passwd.strip()} {enable_secret.strip()}"
-    cred_bytes = credentials.encode('utf-8')
-    encrypted_credentials = f.encrypt(cred_bytes)
-    with open(credFile, 'wb') as f:
-        f.write(encrypted_credentials)
-    
-    print(Fore.GREEN+"\nAdd the below encryption key to the CyberArk, which is required\n to run admin rotation script!!!")
-    print("="*len("Add the below encryption key to the CyberArk, which is required "))
-    print(Fore.BLUE+myKey.decode('utf-8'))
+    credential = secret.strip().encode('utf-8')
+    encrypted_credential = f.encrypt(credential)
+
+    if os.path.exists(credFile):
+        confirm = input("The encrypted secret file exists! Please enter Yes to continue or No to quit:")
+        if confirm == 'Yes' or confirm == 'yes':
+            with open(credFile, 'wb') as f:
+                f.write(encrypted_credential)
+            
+            print(Fore.GREEN+"\nAdd the below encryption key to the CyberArk, which is required\n to run admin rotation script!!!")
+            print("="*len("Add the below encryption key to the CyberArk, which is required "))
+            print(Fore.BLUE+myKey.decode('utf-8'))
+        else:
+            sys.exit()
+
+def decrypt(credFile):
+    # Get the decryption key from standard input
+    try:
+        with open(credFile, 'rb') as f:
+            encrypted_credential = f.read()
+    except (FileNotFoundError,PermissionError,NameError) as e:
+        print(e)
+    else:
+        myKey = input(Fore.GREEN+"Enter your decryption key:"+Fore.RESET)
+        f = Fernet(myKey.strip())
+        decrypted_credential = f.decrypt(encrypted_credential)
+        secret = decrypted_credential.decode('utf-8')
+        print(f"Your secret:{Fore.BLUE}{secret}")
 
 def main():
-    banner()
-    app_run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--action', choices=['encrypt', 'decrypt'], default = 'decrypt'
+    )
+    args = parser.parse_args()
+
+    basePath = Path.home() / 'pyenv3.9' / 'secret'
+    credFile = f"{basePath}/myCredetial.bin"
+
+    banner(args.action)
+    if args.action == 'encrypt': 
+        encrypt(credFile)
+    elif args.action == 'decrypt':
+        decrypt(credFile)
 
 if __name__ == "__main__":
     main()
-
-
