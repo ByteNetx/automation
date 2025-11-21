@@ -1,8 +1,8 @@
 import argparse, getpass, datetime, re, os
 import yaml, jinja2, sys
-from cryptography.fernet import Fernet
+from password_hash import hash_type9
+from encryption import decrypt
 from pathlib import Path
-from password_hash import hash_type8, hash_type9
 from colorama import Fore, Back, Style, init
 from netmiko import ConnectHandler
 from netmiko import NetmikoTimeoutException
@@ -69,7 +69,7 @@ def runner():
     else:
         username = os.getlogin()
 
-    basePath = Path.home() / 'netdev' / 'python-env' / 'cisco'
+    basePath = Path.home() / 'pyenv3.13' / 'cisco'
     devFile = f"{basePath}/data/{args.f}"
 
     with open(devFile, 'r') as f:
@@ -82,11 +82,21 @@ def runner():
         err = f"Missing the required configuration parameters in the following device file!\n{devFile}"
         sys.exit(err)
     
-    passwd = hash_type9()
-    enable = hash_type9()
+    try:
+        credFile = f"{Path.home()}/pyenv3.9/{data['credFile']}"
+        credentials = decrypt(credFile)
+        print(f"{credentials['passwd']}\n{credentials['secret']}")
+        passwd = hash_type9(credentials['passwd'])
+        secret = hash_type9(credentials['secret'])
+    except:
+        pwd = input(Fore.GREEN+"Enter the admin password to encrypt:"+Fore.RESET)
+        enable = input(Fore.GREEN+"Enter the enable secret to encrypt:"+Fore.RESET)
+        passwd = hash_type9(pwd)
+        secret = hash_type9(enable)
+    
     cfgData.update({
         'new_passwd': passwd,
-        'new_enable': enable
+        'new_enable': secret
     })
     
     templatePath = f"{basePath}/templates"
@@ -145,4 +155,3 @@ def runner():
     print('Task completed!')
 if __name__ == "__main__":
     runner()
-
