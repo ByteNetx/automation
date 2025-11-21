@@ -83,7 +83,7 @@ def main():
     )
     args = parser.parse_args()
 
-    basePath = Path.home() / 'pyenv3.13' / 'secrets'
+    basePath = Path.home() / 'pyenv3.9' / 'secrets'
     credFile = f"{basePath}/{args.f}"
 
     banner(args.action)
@@ -97,3 +97,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
