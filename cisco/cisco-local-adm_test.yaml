@@ -9,3 +9,4 @@ cfg-data:
     - admin01
   new_admin: admin02
   template: cisco_local_admin_template.j2
+credFile: secrets/cisco_credentials.bin
