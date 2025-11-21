@@ -32,7 +32,6 @@ def validate_password(pwd):
     invalid_chars = r"(?=.+?[/?:,.\'\\])"
     password_pattern = r"^(?!.*(\w)\1{2,})(?!.*(\s))(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[!@#$%^&*()_+=\[\]\{\};\"<>|]).{16,20}$"
     if not re.match(password_pattern, pwd):
-    #or re.search(r"\s+", pwd) or re.search(invalid_chars, pwd):
         raise InvalidPassword(r"""
 Password does not meet the policy policy:
  - Password must be at least 16 characters long
