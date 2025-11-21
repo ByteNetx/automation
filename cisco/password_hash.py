@@ -19,7 +19,7 @@ def banner():
     print(f"""
 ################################################################
 # Cisco Secret Type 8&9 Password Hasher. The password must be  #
-#  - At least 16 characters long                                #
+#  - At least 16 characters long                               #
 #  - Contains at least one uppercase letter                    #
 #  - Contains at least one lowercase letter                    #
 #  - Contains at least one digit                               #
@@ -29,7 +29,7 @@ def banner():
 """)
 
 def validate_password(pwd):
-    invalid_chars = r"(?=.+?[/?:,.\'\\])"
+    invalid_chars = r"(?=.*?[/?:,.\'\\])"
     password_pattern = r"^(?!.*(\w)\1{2,})(?!.*(\s))(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[!@#$%^&*()_+=\[\]\{\};\"<>|]).{16,20}$"
     if not re.match(password_pattern, pwd):
         raise InvalidPassword(r"""
