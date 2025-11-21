@@ -1,7 +1,7 @@
 from cryptography.fernet import Fernet
 from colorama import Fore, Back, Style, init
 from pathlib import Path
-import argparse, os, sys
+import argparse, os, sys, json
 
 init(autoreset=True) # Automatically resets style after each print
 
@@ -33,15 +33,20 @@ def encrypt(credFile):
     myKey = Fernet.generate_key()
     f = Fernet(myKey)
     
-    passwd = input(Fore.GREEN+"Enter the admin password to encrypt:"+Fore.RESET)
-    secret = input(Fore.GREEN+"Enter the enable secret to encrypt:"+Fore.RESET)
-
-    credential = (f"{passwd.strip()} {secret.strip()}").encode('utf-8')
-    encrypted_credential = f.encrypt(credential)
+    credentials = {}
+    passwd = input("Enter the admin password:")
+    secret = input("Enter the enable secret:")
+    credentials.update({
+        'passwd': passwd,
+        'secret': secret
+    })
+    
+    cred_byptes = json.dumps(credentials).encode('utf-8')
+    encrypted_credential = f.encrypt(cred_byptes)
 
     if os.path.exists(credFile):
-        confirm = input("The encrypted secret file exists! Please enter Yes to continue or No to quit:")
-        if confirm == 'Yes' or confirm == 'yes':
+        confirm = input("The encrypted secret file exists! Please enter yes to continue or no to quit:")
+        if confirm == 'y' or confirm == 'yes':
             with open(credFile, 'wb') as f:
                 f.write(encrypted_credential)
             
@@ -70,8 +75,8 @@ def decrypt(credFile):
         myKey = input(Fore.GREEN+"Enter your decryption key:"+Fore.RESET)
         f = Fernet(myKey.strip())
         decrypted_credential = f.decrypt(encrypted_credential)
-        credential = decrypted_credential.decode('utf-8')
-        return credential
+        credentials = json.loads(decrypted_credential.decode('utf-8'))
+        return credentials
 
 def main():
     parser = argparse.ArgumentParser()
@@ -87,14 +92,13 @@ def main():
     credFile = f"{basePath}/{args.f}"
 
     banner(args.action)
-    if args.action == 'encrypt': 
+    if args.action == 'encrypt':
         encrypt(credFile)
     elif args.action == 'decrypt':
         credentials = decrypt(credFile)
-        passwd = credentials.split()[0]
-        secret = credentials.split()[1]
+        passwd = credentials['passwd']
+        secret = credentials['secret']
         print(f"The admin password:{Fore.BLUE}{passwd}{Fore.RESET}\nThe enable secret:{Fore.BLUE}{secret}")
 
 if __name__ == "__main__":
     main()
-
