@@ -1,4 +1,3 @@
-#!"C:\Users\tyu1\pyenv3.9\Scripts\python.exe"
 from cryptography.fernet import Fernet
 from colorama import Fore, Back, Style, init
 from pathlib import Path
@@ -34,9 +33,10 @@ def encrypt(credFile):
     myKey = Fernet.generate_key()
     f = Fernet(myKey)
     
-    secret = input(Fore.GREEN+"Enter your secret to encrypt:"+Fore.RESET)
+    passwd = input(Fore.GREEN+"Enter the admin password to encrypt:"+Fore.RESET)
+    secret = input(Fore.GREEN+"Enter the enable secret to encrypt:"+Fore.RESET)
 
-    credential = secret.strip().encode('utf-8')
+    credential = (f"{passwd.strip()} {secret.strip()}").encode('utf-8')
     encrypted_credential = f.encrypt(credential)
 
     if os.path.exists(credFile):
@@ -50,6 +50,13 @@ def encrypt(credFile):
             print(Fore.BLUE+myKey.decode('utf-8'))
         else:
             sys.exit()
+    else:
+        with open(credFile, 'wb') as f:
+            f.write(encrypted_credential)
+        
+        print(Fore.GREEN+"\nAdd the below encryption key to the CyberArk, which is required\n to run admin rotation script!!!")
+        print("="*len("Add the below encryption key to the CyberArk, which is required "))
+        print(Fore.BLUE+myKey.decode('utf-8'))
 
 def decrypt(credFile):
     # Get the decryption key from standard input
@@ -58,28 +65,35 @@ def decrypt(credFile):
             encrypted_credential = f.read()
     except (FileNotFoundError,PermissionError,NameError) as e:
         print(e)
+        sys.exit()
     else:
         myKey = input(Fore.GREEN+"Enter your decryption key:"+Fore.RESET)
         f = Fernet(myKey.strip())
         decrypted_credential = f.decrypt(encrypted_credential)
-        secret = decrypted_credential.decode('utf-8')
-        print(f"Your secret:{Fore.BLUE}{secret}")
+        credential = decrypted_credential.decode('utf-8')
+        return credential
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--action', choices=['encrypt', 'decrypt'], default = 'decrypt'
+        '--action', help="Enter the action from choices of encrypt and decrypt. Default to action decrypt.", choices=['encrypt', 'decrypt'], default = 'decrypt'
+    )
+    parser.add_argument(
+        '--f', help="The encrypted credential file", type=str, required=True
     )
     args = parser.parse_args()
 
-    basePath = Path.home() / 'pyenv3.9' / 'secret'
-    credFile = f"{basePath}/myCredetial.bin"
+    basePath = Path.home() / 'pyenv3.13' / 'secrets'
+    credFile = f"{basePath}/{args.f}"
 
     banner(args.action)
     if args.action == 'encrypt': 
         encrypt(credFile)
     elif args.action == 'decrypt':
-        decrypt(credFile)
+        credentials = decrypt(credFile)
+        passwd = credentials.split()[0]
+        secret = credentials.split()[1]
+        print(f"The admin password:{Fore.BLUE}{passwd}{Fore.RESET}\nThe enable secret:{Fore.BLUE}{secret}")
 
 if __name__ == "__main__":
     main()
