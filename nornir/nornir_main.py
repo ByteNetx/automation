@@ -5,6 +5,7 @@ from nornir_napalm.plugins.tasks import napalm_get, napalm_cli, napalm_configure
 from nornir.core.task import Task
 import pandas as pd
 import json
+from xlsxwriter.color import Color
 
 nr = InitNornir(
     config_file="config.yaml"
@@ -45,4 +46,20 @@ else:
         print(e)
     else:
         excel_file = "napalm_facts.xlsx"
-        df.to_excel(excel_file, index=False, engine='xlsxwriter')
+        writer = pd.ExcelWriter(excel_file, engine="xlsxwriter")
+        df.to_excel(writer, sheet_name="Inventory_UK", startrow=1, header=False)
+        workbook = writer.book
+        worksheet = writer.sheets["Inventory_UK"]
+        header_format = workbook.add_format({
+            'bold': True,
+            'italic': False,
+            'text_wrap': False,
+            'align': 'center',
+            'font_color': 'white',
+            'bg_color': Color((3,3)),
+            'border': 0
+        })
+        for col_num, value in enumerate(df.columns.values):
+            worksheet.write(0, col_num + 1, value, header_format)
+            worksheet.autofit()
+        writer.close()
