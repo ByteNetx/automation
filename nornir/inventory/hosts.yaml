@@ -4,3 +4,7 @@ labsw01:
   hostname: 192.168.9.1
   groups:
     - cisco_ios
+labn9k01:
+  hostname: 192.168.9.11
+  groups:
+    - cisco_nxos
