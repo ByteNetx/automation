@@ -1,0 +1,4 @@
+# inventory/groups.yaml
+---
+cisco_ios:
+  platform: 'ios'

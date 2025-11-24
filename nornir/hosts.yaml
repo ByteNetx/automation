@@ -1,0 +1,6 @@
+# inventory/hosts.yaml
+---
+labsw01:
+  hostname: 192.168.9.1
+  groups:
+    - cisco_ios
