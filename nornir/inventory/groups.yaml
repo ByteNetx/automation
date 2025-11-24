@@ -2,3 +2,5 @@
 ---
 cisco_ios:
   platform: 'ios'
+cisco_nxos:
+  platform: 'nx-os'
