@@ -49,7 +49,7 @@ def main():
         config_file="config.yaml"
     )
 
-    #nr = nr.filter()
+    #nr = nr.filter(platform='nxos_ssh')
     nr.inventory.defaults.username = username
     nr.inventory.defaults.password = args.password
 
