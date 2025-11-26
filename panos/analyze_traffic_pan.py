@@ -15,10 +15,11 @@ def runner():
     )
     args = parser.parse_args()
 
-    trafficFile = args.f
-    basePath = Path.home() / 'netdev' / 'python-env' / 'panos'
-    trafficLog = f"{basePath}/traffic_logs/{trafficFile}"
-    reportFile = f"{basePath}/traffic_report/{trafficFile.replace('log_','report_').replace(".csv", ".xlsx")}"
+    inFile = args.f
+    basePath = Path.home() / 'pyenv3.9' / 'panos'
+    trafficLog = f"{basePath}/traffic_logs/{inFile}"
+    outFile = inFile.replace('log_','report_').replace(".csv", ".xlsx")
+    reportFile = f"{basePath}/traffic_reports/{outFile}"
 
     flows = []
     blocked_flows = []
