@@ -1,8 +1,8 @@
 import argparse, getpass, datetime, re, os
-import yaml, jinja2, sys
+import yaml, jinja2, sys, logging
+from pathlib import Path
 from password_hash import hash_type9
 from encryption import decrypt
-from pathlib import Path
 from colorama import Fore, Back, Style, init
 from netmiko import ConnectHandler
 from netmiko import NetmikoTimeoutException
@@ -22,17 +22,17 @@ def banner():
 #-----------------------------------------------------------------#
 """)
     
-def connect(device,logwriter):
+def connect(device):
     global ssh_connect
     try:
         ssh_connect = ConnectHandler(**device)
         prompter = ssh_connect.find_prompt()
         if '>' in prompter:
             ssh_connect.enable()
-        return True
+        return ssh_connect
     except (NetmikoTimeoutException, NetmikoAuthenticationException) as error:
         print(error)
-        logwriter.write(f"An error to SSH to {device['host']}\n{error}\n")
+        logging.info(f"Failed connecting to {device['host']}\n{error}\n")
         pass
 
 def runner():
@@ -70,22 +70,48 @@ def runner():
         username = os.getlogin()
 
     basePath = Path.home() / 'pyenv3.9' / 'cisco'
-    devFile = f"{basePath}/data/{args.f}"
 
-    with open(devFile, 'r') as f:
-        data = yaml.safe_load(f)
+    devFile = f"{basePath}/data/{args.f}"
+    datenow = datetime.datetime.now().strftime("%Y%m%d")
+    logFile = f"{basePath}/logs/change_logs_{datenow}.log"
+
+    logging.basicConfig(
+        filename=logFile,               # Name of the log file
+        level=logging.INFO,             # Minimum logging level to capture (e.g., INFO, DEBUG, WARNING, ERROR, CRITICAL)
+        encoding='utf-8',
+        format='%(asctime)s - %(levelname)s - %(message)s', # Format of log messages
+        datefmt='%Y/%m/%d %I:%M:%S %p',
+        filemode='a'                    # File mode: 'a' for append (default), 'w' for overwrite
+    )
+
+    try:
+        with open(devFile, 'r') as f:
+            data = yaml.safe_load(f)
+    except Exception as e:
+        logging.info(e)
+        sys.exit()
 
     devData = data['devices']
     cfgData = data['cfg-data']
     devices = {devType: devList for devType, devList in devData.items() if devList is not None}
     if any(Value is None for Key, Value in cfgData.items()):
         err = f"Missing the required configuration parameters in the following device file!\n{devFile}"
-        sys.exit(err)
+        logging.info(err)
+        sys.exit()
     
+    try:
+        templatePath = f"{basePath}/templates"
+        loader = jinja2.FileSystemLoader(searchpath=templatePath)
+        env = jinja2.Environment(autoescape=False, loader=loader)
+        cisco_template = env.get_template(cfgData['template'])
+    except Exception as e:
+        logging.info(e)
+        sys.exit()
+
     try:
         credFile = f"{Path.home()}/pyenv3.9/{data['credFile']}"
         credentials = decrypt(credFile)
-        print(f"{credentials['passwd']}\n{credentials['secret']}")
+        #print(f"{credentials['passwd']}\n{credentials['secret']}")
         passwd = hash_type9(credentials['passwd'])
         secret = hash_type9(credentials['secret'])
     except:
@@ -93,20 +119,11 @@ def runner():
         enable = input(Fore.GREEN+"Enter the enable secret to encrypt:"+Fore.RESET)
         passwd = hash_type9(pwd)
         secret = hash_type9(enable)
-    
+
     cfgData.update({
         'new_passwd': passwd,
         'new_enable': secret
     })
-    
-    templatePath = f"{basePath}/templates"
-    loader = jinja2.FileSystemLoader(searchpath=templatePath)
-    env = jinja2.Environment(autoescape=False, loader=loader)
-    cisco_template = env.get_template(cfgData['template'])
-
-    datenow = datetime.datetime.now().strftime("%Y%m%d")
-    logFile = f"{basePath}/logs/change_logs_{datenow}.txt"
-    logwriter = open(logFile, 'a')
 
     for devType, devList in devices.items():
         for each in devList:
@@ -124,35 +141,41 @@ def runner():
                 cfg_data.update(cfgData)
                 cis_cfg = cisco_template.render(cfg_data)
                 cis_cfg = "".join([s for s in cis_cfg.splitlines(True) if (not re.search(r"^\s*$", s))])
-                if connect(device,logwriter):
+                try:
+                    ssh_connect = connect(device)
                     current_prompt = ssh_connect.find_prompt()
                     devName = current_prompt.strip("#")
                     print(f"\nConnected to {device['host']}-{devName} to deploy configurations")
-                    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-                    logwriter.write(f"+++++++++++++++ {timestamp}-{device['host']}-{devName} +++++++++++++++\n")
-                    
-                    deploy_cfg = ssh_connect.send_config_set(cis_cfg.split('\n'))
-        
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    logging.info(f"++++++++++++++++ Begin:{timestamp}-{device['host']}-{devName} +++++++++++++++++\n")
+                except Exception as e:
+                    logging.info(e)
+                    pass
+                else:
+                    #deploy_cfg = ssh_connect.send_config_set(cis_cfg.split('\n'))
+                    print(cis_cfg)
+            
                     showUser = ssh_connect.send_command('show run | i username')
                     output = re.findall(r"username\s(\S+)\s",showUser)
                     if output:
                         for user in cfg_data['current_admin']:
                             if user in output:
-                                deploy_cfg += ssh_connect.send_multiline_timing(
-                                    ["conf term",f"no username {user}","\n","end"]
-                                )
-    
+                                #deploy_cfg += ssh_connect.send_multiline_timing(
+                                #    ["conf term",f"no username {user}","\n","end"]
+                                #)
+                                print(["conf term",f"no username {user}","\n","end"])
+        
                     if devType == "cisco_ios":
                         save_cfg = ssh_connect.save_config()
                     elif devType == "cisco_nxos":
                         save_cfg = ssh_connect.send_multiline_timing(
                             ["copy running-config startup-config","\n"]
                         )
-                    logwriter.write(f"{showUser}\n\n{deploy_cfg}\n\n{save_cfg}\n\n")
+                    print(save_cfg)
+                    #logging.info(f"{showUser}\n\n{deploy_cfg}\n\n{save_cfg}\n\n++++++++++++++++++++++++++++++++++++ Finish ++++++++++++++++++++++++++++++++++++\n\n")
                     ssh_connect.disconnect()
-    
-    logwriter.close()
-    print('Task completed!')
+
+    print('Task completed. Please verify configuration changes in the change log!')
+
 if __name__ == "__main__":
     runner()
-
