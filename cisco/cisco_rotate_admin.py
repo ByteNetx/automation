@@ -152,18 +152,18 @@ def runner():
                     logging.info(e)
                     pass
                 else:
-                    #deploy_cfg = ssh_connect.send_config_set(cis_cfg.split('\n'))
-                    print(cis_cfg)
+                    deploy_cfg = ssh_connect.send_config_set(cis_cfg.split('\n'))
+                    #print(cis_cfg)
             
                     showUser = ssh_connect.send_command('show run | i username')
                     output = re.findall(r"username\s(\S+)\s",showUser)
                     if output:
                         for user in cfg_data['current_admin']:
                             if user in output:
-                                #deploy_cfg += ssh_connect.send_multiline_timing(
-                                #    ["conf term",f"no username {user}","\n","end"]
-                                #)
-                                print(["conf term",f"no username {user}","\n","end"])
+                                deploy_cfg += ssh_connect.send_multiline_timing(
+                                    ["conf term",f"no username {user}","\n","end"]
+                                )
+                                #print(["conf term",f"no username {user}","\n","end"])
         
                     if devType == "cisco_ios":
                         save_cfg = ssh_connect.save_config()
@@ -171,8 +171,8 @@ def runner():
                         save_cfg = ssh_connect.send_multiline_timing(
                             ["copy running-config startup-config","\n"]
                         )
-                    print(save_cfg)
-                    #logging.info(f"{showUser}\n\n{deploy_cfg}\n\n{save_cfg}\n\n++++++++++++++++++++++++++++++++++++ Finish ++++++++++++++++++++++++++++++++++++\n\n")
+                    #print(save_cfg)
+                    logging.info(f"{showUser}\n\n{deploy_cfg}\n\n{save_cfg}\n\n++++++++++++++++++++++++++++++++++++ Finish ++++++++++++++++++++++++++++++++++++\n\n")
                     ssh_connect.disconnect()
 
     print('Task completed. Please verify configuration changes in the change log!')
