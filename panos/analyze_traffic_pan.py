@@ -1,5 +1,6 @@
-import argparse, csv, sys
+import argparse, sys
 import pandas as pd
+from tqdm import tqdm
 from xlsxwriter import Workbook
 from xlsxwriter.color import Color
 from operator import itemgetter, attrgetter
@@ -27,7 +28,7 @@ def runner():
     args = parser.parse_args()
 
     inFile = args.f
-    basePath = Path.home() / 'pyenv3.9' / 'panos'
+    basePath = Path.home() / 'pyenv3.11' / 'panos'
     trafficLog = f"{basePath}/traffic_logs/{inFile}"
     outFile = inFile.replace('log_','report_').replace(".csv", ".xlsx")
     reportFile = f"{basePath}/traffic_reports/{outFile}"
@@ -64,7 +65,8 @@ def runner():
         df.fillna('',inplace=True)
     except FileNotFoundError as error:
         sys.exit(error)
-    for i in df.index:
+
+    for i in tqdm(df.index, desc="progressing"):
         if df.loc[i]['Action'] != 'allow':
             blocked_flows.extend([(
                 df.loc[i]['Source Zone'],
@@ -112,6 +114,7 @@ def runner():
                 df.loc[i]['Rule'],
                 df.loc[i]['Device Name']
             )])
+
     # Remove duplicate and sort flows, IPs, and applications
     if args.sort == 'src':
         flows = sorted(set(flows), key=itemgetter(2,6,7))
