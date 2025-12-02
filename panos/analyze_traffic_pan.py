@@ -11,7 +11,7 @@ def banner():
 * The script analyzes the PA NGFW traffic logs and *
 * generates an Excel report file in the following  *
 * location:                                        *
-*   ~/pyenv3.9/panos/reports                                *
+*   ~/pyenv3.9/panos/reports                       *
 ****************************************************
     """)
 
