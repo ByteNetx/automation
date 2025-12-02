@@ -5,7 +5,18 @@ from xlsxwriter.color import Color
 from operator import itemgetter, attrgetter
 from pathlib import Path
 
+def banner():
+    print("""
+****************************************************
+* The script analyzes the PA NGFW traffic logs and *
+* generates an Excel report file in the following  *
+* location:                                        *
+*   ~/panos/reports                                *
+****************************************************
+    """)
+
 def runner():
+    banner()
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--f', help='Traffic log csv file', required=True
