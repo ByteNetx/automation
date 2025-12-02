@@ -1,5 +1,6 @@
 import argparse, getpass, datetime, re, os
 import yaml, jinja2, sys, logging
+from tqdm import tqdm
 from pathlib import Path
 from password_hash import hash_type9
 from encryption import decrypt
@@ -126,7 +127,7 @@ def runner():
     })
 
     for devType, devList in devices.items():
-        for each in devList:
+        for each in tqdm(devList, miniters=1, unit='device', desc=devType):
             cfg_data = {}
             if each is not None:
                 dev = DEVICE(each, username, args.password, args.password, devType)
@@ -179,3 +180,4 @@ def runner():
 
 if __name__ == "__main__":
     runner()
+
