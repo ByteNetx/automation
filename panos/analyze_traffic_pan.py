@@ -66,7 +66,7 @@ def runner():
     except FileNotFoundError as error:
         sys.exit(error)
 
-    for i in tqdm(df.index, desc="progressing"):
+    for i in tqdm(df.index, miniters=1, unit='row', desc="progressing"):
         if df.loc[i]['Action'] != 'allow':
             blocked_flows.extend([(
                 df.loc[i]['Source Zone'],
