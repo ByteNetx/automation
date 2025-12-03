@@ -29,7 +29,6 @@ def banner():
 """)
 
 def validate_password(pwd):
-    invalid_chars = r"(?=.*?[/?:,.\'\\])"
     password_pattern = r"^(?!.*(\w)\1{2,})(?!.*(\s))(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[!@#$%^&*()_+=\[\]\{\};\"<>|]).{16,20}$"
     if not re.match(password_pattern, pwd):
         raise InvalidPassword(r"""
