@@ -97,7 +97,7 @@ def runner():
     completed = []
     failed = []
 
-    for dev in devices['pafw']:
+    for dev in tqdm(devices['pafw'], unit="NGFW", miniters=1, desc="progressing"):
         device = DEVICE(dev, username, args.password)
         panLogin = {
             'host': device.host,
@@ -188,3 +188,4 @@ def runner():
 
 if __name__ == "__main__":
     runner()
+
