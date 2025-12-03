@@ -3,6 +3,7 @@
 import requests, xmltodict, sys, os, calendar
 import datetime, argparse, yaml, getpass, logging
 import pandas as pd
+from tqdm import tqdm
 from openpyxl.workbook import Workbook
 from xlsxwriter import Workbook
 from xlsxwriter.color import Color
@@ -188,4 +189,5 @@ def runner():
 
 if __name__ == "__main__":
     runner()
+
 
