@@ -1,15 +1,18 @@
 import pandas as pd
 from pathlib import Path
-import json
-from openpyxl.workbook import Workbook
+import json, os, sys
 from xlsxwriter.color import Color
+from xlsxwriter.utility import xl_col_to_name
 
-basePath = Path.home() / 'pyenv3.9' / 'panos'
+basePath = Path.home() / 'pyenv3.9' / 'panos' 
 inFile = "config_data/AzureFirewallERAllPolicies.json"
 reportFile = "config_data/azfw_rules.xlsx"
-with open(inFile, encoding="utf-8-sig") as f:
-    data = json.load(f)
 
+if os.path.exists(inFile):
+    with open(inFile, encoding="utf-8-sig") as f:
+        data = json.load(f)
+else:
+    sys.exit(0)
 rules = []
 for item in data['resources']:
     if "ruleCollectionGroups" in item['type']:
@@ -44,7 +47,7 @@ sorted_rules = sorted(new_rules, key=lambda x: (x['groupPriority'], x['collectio
 df_rules = pd.DataFrame(sorted_rules)
 df_rules.fillna('',inplace=True)
 rows = df_rules.shape[0]
-columes = xlsxwriter.utility.xl_col_to_name(df_rules.shape[1])
+columes = xl_col_to_name(df_rules.shape[1])
 headers = df_rules.columns.tolist()
 with pd.ExcelWriter(reportFile, engine='xlsxwriter') as writer:
     df_rules.to_excel(writer, sheet_name='azfw_rules', index=False, )
