@@ -4,7 +4,7 @@ import json, os, sys
 from xlsxwriter.color import Color
 from xlsxwriter.utility import xl_col_to_name
 
-basePath = Path.home() / 'pyenv3.9' / 'panos' 
+basePath = Path.home() / 'pyenv3.13' / 'panos' 
 inFile = "config_data/AzureFirewallERAllPolicies.json"
 reportFile = "config_data/azfw_rules.xlsx"
 
@@ -13,6 +13,7 @@ if os.path.exists(inFile):
         data = json.load(f)
 else:
     sys.exit(0)
+
 rules = []
 for item in data['resources']:
     if "ruleCollectionGroups" in item['type']:
@@ -24,18 +25,23 @@ for item in data['resources']:
             action = entry['action']['type']
             for each in entry['rules']:
                 rule = {k: v for k,v in each.items() if v}
-                prot_list = []
+                protocols = []
                 if 'protocols' in rule.keys():
                     if isinstance(rule['protocols'], list) and len(rule['protocols']) != 0:
                         for prot in rule['protocols']:
-                            prot_list.append(f"{prot['protocolType']}-{prot['port']}")
-                        rule['protocols'] = prot_list
+                            protocols.append(f"{prot['protocolType']}-{prot['port']}")
+                        rule['protocols'] = protocols
                 rule.update({
+                    "action": action,
                     "groupName": grpName,
                     "groupPriority": grpPriority,
                     "collectionName": collectionName,
                     "collectionPriority": collectionPriority
                 })
+                if rule['ruleType'] == 'NetworkRule' and 'destinationPorts' in rule.keys():
+                    services = [v for k, v in rule.items() if k == 'destinationPorts']
+                    services = [item for sublist in services for item in sublist]
+                    rule['destinationPorts'] = services
                 rules.append(rule)
 
 new_rules = []
