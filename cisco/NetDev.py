@@ -57,9 +57,9 @@ class NetworkDevice:
 
 if __name__ == "__main__":
     pano = NetworkDevice(
-        '192.168.10.254',
-        'admin',
-        'Jy@2108A1!',
+        '',
+        '',
+        '',
         'paloalto_panos'
     )
 
