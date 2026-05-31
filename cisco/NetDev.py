@@ -3,7 +3,7 @@ from netmiko import NetmikoTimeoutException
 from netmiko import NetmikoAuthenticationException
 
 class NetworkDevice:
-    def __init__(self, host, username, password, device_type):
+    def __init__(self, host, username, password, secret, device_type):
         """
         Initializes connection with device parameters and prepares for connection.
         """
@@ -11,6 +11,7 @@ class NetworkDevice:
             'host': host,
             'username': username,
             'password': password,
+            'secret': secret,
             'device_type': device_type,
         }
         self.connection = None
@@ -41,6 +42,8 @@ class NetworkDevice:
         Push config to the device and returns the output.
         """
         if self.connection:
+            if '>' in self.connection.find_prompt():
+                self.connection.enable()
             output = self.connection.send_config_set(config_set, **kwargs)
             return output
         else:
@@ -57,9 +60,10 @@ class NetworkDevice:
 
 if __name__ == "__main__":
     pano = NetworkDevice(
-        '',
-        '',
-        '',
+        '192.168.10.254',
+        'username',
+        'passwd',
+        'secret',
         'paloalto_panos'
     )
 
