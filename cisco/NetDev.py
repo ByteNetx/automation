@@ -3,7 +3,7 @@ from netmiko import NetmikoTimeoutException
 from netmiko import NetmikoAuthenticationException
 
 class NetworkDevice:
-    def __init__(self, host, username, password, secret, device_type):
+    def __init__(self, host: str, username: str, password: str, secret: str, device_type: str):
         """
         Initializes connection with device parameters and prepares for connection.
         """
@@ -23,7 +23,7 @@ class NetworkDevice:
         try:
             print(f"Connecting to {self.device['host']}...")
             self.connection = ConnectHandler(**self.device)
-            print("Connection established successfully!")
+            print("✅ Connection established successfully!")
         except (NetmikoTimeoutException, NetmikoAuthenticationException) as error:
             print(f"❌ Failed to SSH to {self.device['host']} with the below error:\n{error}")
 
@@ -35,7 +35,7 @@ class NetworkDevice:
             output = self.connection.send_command(command, **kwargs)
             return output
         else:
-            return "Error: No active connection."
+            return "❌ Error: No active connection."
     
     def push_config(self, config_set, **kwargs):
         """
@@ -47,7 +47,7 @@ class NetworkDevice:
             output = self.connection.send_config_set(config_set, **kwargs)
             return output
         else:
-            return "Error: No active connection."
+            return "❌ Error: No active connection."
 
     def disconnect(self):
         """
@@ -60,11 +60,11 @@ class NetworkDevice:
 
 if __name__ == "__main__":
     pano = NetworkDevice(
-        '192.168.10.254',
-        'username',
-        'passwd',
-        'secret',
-        'paloalto_panos'
+        host = '192.168.10.254',
+        username = 'username',
+        password = 'passwd',
+        secret = 'secret',
+        device_type = 'paloalto_panos'
     )
 
     pano.connect()
