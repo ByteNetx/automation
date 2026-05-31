@@ -28,40 +28,40 @@ def banner(action):
 *                       |___/|_|                                            *
 *****************************************************************************
 """)
-def encrypt(credFile):
+def encrypt(credFile, action):
     # Generate an encryption key that will be used to encrypt the credentials
     myKey = Fernet.generate_key()
     f = Fernet(myKey)
     
-    credentials = {}
-    passwd = input("Enter the admin password:")
-    secret = input("Enter the enable secret:")
-    credentials.update({
-        'passwd': passwd,
-        'secret': secret
-    })
+    if os.path.exists(credFile):
+        credentials = decrypt(credFile)
+    else:
+        credentials = {}
     
-    cred_byptes = json.dumps(credentials).encode('utf-8')
+    if action == 'add':
+        while True:
+            choice = input("Enter 'yes' to add an account or 'no' to quit: ").lower()
+            if choice == 'yes':
+                username = input("Enter Username: ")
+                password = input("Enter Password: ")
+                credentials.update({username: password})
+            elif choice == 'no':
+                break  # Valid input, exit loop
+        new_credentials = {k: v for k,v in credentials.items()}
+    elif action == 'delete':
+        del_account = input("Enter the account to be removed: ")
+        new_credentials = {k: v for k,v in credentials.items() if k != del_account}
+
+ 
+    cred_byptes = json.dumps(new_credentials).encode('utf-8')
     encrypted_credential = f.encrypt(cred_byptes)
 
-    if os.path.exists(credFile):
-        confirm = input("The encrypted secret file exists! Please enter yes to continue or no to quit:")
-        if confirm == 'y' or confirm == 'yes':
-            with open(credFile, 'wb') as f:
-                f.write(encrypted_credential)
-            
-            print(Fore.GREEN+"\nAdd the below encryption key to the CyberArk, which is required\n to run admin rotation script!!!")
-            print("="*len("Add the below encryption key to the CyberArk, which is required "))
-            print(Fore.BLUE+myKey.decode('utf-8'))
-        else:
-            sys.exit()
-    else:
-        with open(credFile, 'wb') as f:
-            f.write(encrypted_credential)
-        
-        print(Fore.GREEN+"\nAdd the below encryption key to the CyberArk, which is required\n to run admin rotation script!!!")
-        print("="*len("Add the below encryption key to the CyberArk, which is required "))
-        print(Fore.BLUE+myKey.decode('utf-8'))
+    with open(credFile, 'wb') as f:
+        f.write(encrypted_credential)
+    print(f"\n{Fore.GREEN}Updated credentials in {credFile}{Fore.RESET}\n")
+    print("The below key is required to decrypt stored credentials: ")
+    print("="*len("The below key is required to decrypt stored credentials: "))
+    print(Fore.BLUE+myKey.decode('utf-8'))
 
 def decrypt(credFile):
     # Get the decryption key from standard input
@@ -81,7 +81,7 @@ def decrypt(credFile):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--action', help="Enter the action from choices of encrypt and decrypt. Default to action decrypt.", choices=['encrypt', 'decrypt'], default = 'decrypt'
+        '--action', help="Enter the action from choices. Default to action show.", choices=['show', 'add', 'delete'], default = 'show'
     )
     parser.add_argument(
         '--f', help="The encrypted credential file", type=str, required=True
@@ -92,13 +92,13 @@ def main():
     credFile = f"{basePath}/{args.f}"
 
     banner(args.action)
-    if args.action == 'encrypt':
-        encrypt(credFile)
-    elif args.action == 'decrypt':
+    if args.action != 'show':
+        encrypt(credFile, args.action)
+    elif args.action == 'show':
         credentials = decrypt(credFile)
-        passwd = credentials['passwd']
-        secret = credentials['secret']
-        print(f"The admin password:{Fore.BLUE}{passwd}{Fore.RESET}\nThe enable secret:{Fore.BLUE}{secret}")
+        print("\n------------Credentials List------------")
+        for u, p in credentials.items():
+            print(f"{Fore.CYAN}{u}: {p}{Fore.RESET}")
 
 if __name__ == "__main__":
     main()
