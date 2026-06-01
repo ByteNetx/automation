@@ -265,9 +265,9 @@ if __name__ == "__main__":
         sys.exit()
     
     pano = NetworkDevice(
-        host = '192.168.10.254',
-        username = 'admin',
-        password = 'Jy@2108A1!',
+        host = '',
+        username = '',
+        password = '',
         secret = 'secret',
         device_type = 'paloalto_panos'
     )
