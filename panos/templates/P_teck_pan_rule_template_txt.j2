@@ -1,0 +1,34 @@
+{% set loc %}device-group Core{% endset %}
+{% set rule_type %}pre-rulebase{% endset %}
+{% set srcIP %}{% if SourceIP and ',' not in SourceIP %}{{SourceIP}}{% elif ',' in SourceIP %}[ {{SourceIP.replace(',', ' ')}} ]{%else%}any{% endif %}{% endset %}
+{% set destIP %}{% if DestinationIP and ',' not in DestinationIP %}{{DestinationIP}}{% elif ',' in DestinationIP %}[ {{DestinationIP.replace(',', ' ')}} ]{%else%}any{% endif %}{% endset %}
+{% set srcUser %}{% if SourceUser and ',' not in SourceUser %}{{SourceUser}}{% elif ',' in SourceUser %}[ {{SourceUser.replace(',', ' ')}} ]{%else%}any{% endif %}{% endset %}
+{% set srv %}{% if Service and ',' not in Service %}{{Service}}{% elif ',' in Service %}[ {{Service.replace(',', ' ')}} ]{%else%}application-default{% endif %}{% endset %}
+{% set app %}{% if Application and ',' not in Application %}{{Application}}{% elif ',' in Application %}[ {{Application.replace(',', ' ')}} ]{%else%}any{% endif %}{% endset %}
+{% set act %}{% if Action %}{{Action}}{%else%}allow{% endif %}{% endset %}
+{% set secGrp %}{% if SecurityGroup %}{{SecurityGroup}}{%else%}spg-alert-unknown-all{% endif %}{% endset %}
+{% set logProf %}{% if LoggingProfile %}{{LoggingProfile}}{%else%}default{% endif %}{% endset %}
+set {{loc}} {{rule_type}} security rules {{RuleName}} from {{SourceZone}}
+set {{loc}} {{rule_type}} security rules {{RuleName}} to {{DestinationZone}}
+set {{loc}} {{rule_type}} security rules {{RuleName}} source {{srcIP}}
+set {{loc}} {{rule_type}} security rules {{RuleName}} destination {{destIP}}
+set {{loc}} {{rule_type}} security rules {{RuleName}} source-user {{srcUser}}
+set {{loc}} {{rule_type}} security rules {{RuleName}} application {{app}}
+set {{loc}} {{rule_type}} security rules {{RuleName}} service {{srv}}
+set {{loc}} {{rule_type}} security rules {{RuleName}} action {{act}}
+set {{loc}} {{rule_type}} security rules {{RuleName}} description {{description}}
+{% if act == 'allow' %}
+set {{loc}} {{rule_type}} security rules {{RuleName}} profile-setting group {{secGrp}}
+{% endif %}
+set {{loc}} {{rule_type}} security rules {{RuleName}} log-setting {{logProf}}
+set {{loc}} {{rule_type}} security rules {{RuleName}} log-end yes
+set {{loc}} {{rule_type}} security rules {{RuleName}} target negate no
+set {{loc}} {{rule_type}} security rules {{RuleName}} target tags CGC-TO-TECK-INTERCONNECT
+{% if tag %}
+set {{loc}} {{rule_type}} security rules {{RuleName}} tag {{tag}}
+{% endif %}
+{% if SourceZone == 'cgc-vwire' and DestinationZone == 'teck-vwire' %}
+move {{loc}} {{rule_type}} security rules {{RuleName}} before allow-dc-evr-to-teck
+{% elif SourceZone == 'teck-vwire' and DestinationZone == 'cgc-vwire' %}
+move {{loc}} {{rule_type}} security rules {{RuleName}} before allow-dc-teck-to-evr
+{% endif %}
