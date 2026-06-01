@@ -1,0 +1,13 @@
+{% for i,h in addresses %}
+{% if h != 'NXDOMAIN' %}
+set shared address H-{{i}}-{{h}} ip-netmask {{i}}
+{% else %}
+set shared address H-{{i}} ip-netmask {{i}}
+{% endif %}
+{% endfor %}
+{% for n in networks %}
+set shared address N-{{n.replace('/', '-')}} ip-netmask {{n}}
+{% endfor %}
+{% for d in fqdns %}
+set shared address {{d}} fqdn {{d}}
+{% endfor %}
