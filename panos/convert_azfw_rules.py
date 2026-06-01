@@ -273,3 +273,80 @@ if __name__ == "__main__":
     )
     
     createConfig(data, loc, pano, f"{cfgFilePath}/{cfgFile}")
+
+print(f"\nConnecting to {pan_dev['host']} and validating objects......")
+        net_connect.send_command('set cli pager off', expect_string=r'>', delay_factor=4)
+        net_connect.send_command('set cli config-output-format set', expect_string=r'>', delay_factor=4)
+        net_connect.send_command('configure', expect_string=r'#', delay_factor=4)
+        extSrv = []
+        extAddr = []
+        extRule = []
+        if services:
+            cmd = f"show shared service | match {newSrv}"
+            srv_resp = net_connect.send_command(cmd, expect_string=r'#', delay_factor=4)
+            for item in list(filter(None, srv_resp.split('\n'))):
+                extSrv.extend(re.findall(r"service\s(\S+)\sprotocol\s(tcp|udp)\sport\s(\S+)", item))
+        if addresses:
+            cmd = f"show shared address | match {newAddr}"
+            addr_resp = net_connect.send_command(cmd, expect_string=r'#', delay_factor=4)
+            for item in list(filter(None, addr_resp.split('\n'))):
+                extAddr.extend(re.findall(r"address\s(\S+)\s\S+\s(\S+)", item))
+        if new_rule_list:
+            cmd = f"show device-group CORE pre-rulebase security rules | match {newRule}"
+            rule_resp = net_connect.send_command(cmd, expect_string=r'#', delay_factor=4)
+            for r in new_rule_list:
+                if r in rule_resp:
+                    extRule.append(r)
+            extRule = sorted(set(extRule))
+
+        net_connect.send_command('exit', expect_string=r'>', delay_factor=4)
+        net_connect.send_command('set cli config-output-format default', expect_string=r'>', delay_factor=4)
+        net_connect.disconnect()
+        
+        # Update the configuration data of desired rules with the existing objects
+        if extRule:
+            print(f"\n{Fore.YELLOW}Desired rulebases existing on PAN:\n--------------------------------------")
+            for r in extRule:
+                print(r)
+
+        req_rules = {}
+        for rule in new_rules:
+            for i, a in enumerate(new_rules[rule]["SourceIP"]):
+                for (name, addr) in extAddr:
+                    if addr == a:
+                        new_rules[rule]["SourceIP"][i] = name
+            for i, a in enumerate(new_rules[rule]["DestinationIP"]):
+                for (name, addr) in extAddr:
+                    if addr == a:
+                        new_rules[rule]["DestinationIP"][i] = name
+            for i, s in enumerate(new_rules[rule]["Service"]):
+                for (name, protocol, port) in extSrv:
+                    if protocol in s and port in s:
+                        new_rules[rule]["Service"][i] = name
+            if rule not in extRule:
+                req_rules.update({rule: new_rules[rule]})
+        if req_rules:
+            req_addr = []
+            req_srv = []
+            for rule in req_rules:
+                for i, a in enumerate(req_rules[rule]["SourceIP"]):
+                    if all(a not in obj for obj in addr_resp.split('\n')):
+                        req_addr.append(req_rules[rule]["SourceIP"][i])
+                for i, a in enumerate(req_rules[rule]["DestinationIP"]):
+                    if all(a not in obj for obj in addr_resp.split('\n')):
+                        req_addr.append(req_rules[rule]["DestinationIP"][i])
+                for i, s in enumerate(req_rules[rule]["Service"]):
+                    if '-' in s:
+                        if all((s.split('-')[0] not in obj or s.split('-')[1] not in obj) for obj in srv_resp.split('\n')):
+                            req_srv.append(req_rules[rule]["Service"][i])
+            req_addr = sorted(set(req_addr))
+            req_srv = sorted(set(req_srv))
+            #print(json.dumps(req_rules, indent=2))
+            print(f"\n{Fore.WHITE}The existing configurations for objects:\n-----------------------------------------")
+            for each in extAddr+extSrv:
+                print(each)   
+            createConfig(basePath, req_rules, req_addr, req_srv, inFile, description)
+        print(f"\n{Fore.WHITE}Task completed!")
+    else:
+        print(f"{Fore.YELLOW}Failed to validate required objects on Panorama, and abort tasks!")
+
