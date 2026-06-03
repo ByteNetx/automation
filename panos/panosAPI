@@ -1,0 +1,497 @@
+import xml.etree.ElementTree as ET
+import json
+from requests import request,packages, Response
+from requests.exceptions import SSLError, HTTPError, Timeout, TooManyRedirects
+
+class PaloAltoAPI:
+
+    def __init__(self, host: str, username: str=None, password: str=None, api_key: str=None):
+
+        self.host = host
+        self.username = username
+        self.password = password
+        if not api_key:
+            self.key = self.get_api_key()
+        else:
+            self.key = api_key
+        self.version = self.get_system_info().find('.//sw-version').text
+
+    def _make_request(self, values, verify=False, timeout=300) -> Response:
+
+        packages.urllib3.disable_warnings()
+
+        url = f'https://{self.host}/api'
+
+        try:
+
+            req_type = values['type']
+            params = values['params']
+            headers = values['headers']
+            ver = verify
+            time = timeout
+
+        except KeyError as err:
+            print(f'Expected 3 values, missing one or more: {err}')
+            return None
+
+        try:
+
+            req = request(
+                req_type,
+                url=url,
+                headers=headers,
+                params=params,
+                verify=ver,
+                timeout=time
+            )
+
+            req.raise_for_status()
+            return req
+
+        except (SSLError, Timeout, ConnectionError, TooManyRedirects) as err:
+            print(f'API call failed due to {err}')
+            return req
+
+    def _make_rest_request(self, values, endpoint, verify=False, timeout=300) -> Response:
+
+        packages.urllib3.disable_warnings()
+
+        rest_ver = self._rest_panos_formatter()
+        url = f'https://{self.host}/restapi/v{rest_ver}/{endpoint}'
+
+        try:
+
+            req_type = values['type']
+            params = values['params']
+            headers = values['headers']
+            data = values['data']
+            ver = verify
+            time = timeout
+
+        except KeyError as err:
+            print(f'Expected 4 values, missing one or more: {err}')
+            return None
+
+        req = request(
+                req_type,
+                url=url,
+                headers=headers,
+                params=params,
+                json=data,
+                verify=ver,
+                timeout=time
+            )
+
+        return req
+
+    def _rest_panos_formatter(self):
+        temp_split = self.version.split('.')
+        formatted = f'{temp_split[0]}.{temp_split[1]}'
+        return formatted
+
+
+    def get_api_key(self):
+        '''
+        Returns API key for specified user/password
+
+        :param host: String containing device hostname/address
+        :param username: Username string
+        :param password: Password string
+        :return: API Key
+        '''
+
+        values = {
+            'type': 'POST',
+            'params': {
+                'type': 'keygen',
+                'user': self.username,
+                'password': self.password
+            },
+            'headers': None
+        }
+
+        data = self._make_request(values)
+        root = ET.fromstring(data.text)
+        api_key = root.find('./result/key').text
+        return api_key
+
+    def get_system_info(self, serial: str=None):
+        '''
+        Get system info
+
+        :param host: String containing Panorama Hostname/Address
+        :param key: String containing API Key
+        :return: Response object
+        '''
+
+        values = {
+            'type': 'GET',
+            'params': {
+                'type': 'op',
+                'action': 'get',
+                'cmd': '<show><system><info></info></system></show>',
+                'target': serial
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        data = self._make_request(values)
+        info_root = ET.fromstring(data.text)
+
+        return info_root
+    
+
+    def address_objects(self, action: str, objects: str, location: str, new_config: str = None, new_name: str = None) -> Response:
+
+        if new_name:
+            endpoint = 'Objects/Addresses:rename'
+        else:
+            endpoint = 'Objects/Addresses'
+        
+        if objects == 'all':
+            object_name = None
+        else:
+            object_name = objects
+
+        loc_type = 'device-group' if location != 'shared' else 'shared'
+        device_group = None if loc_type == 'shared' else location
+
+        values = {
+            'type': action,
+            'data': new_config,
+            'params': {
+                'name': object_name,
+                'location': loc_type,
+                'device-group': device_group,
+                'newname': new_name
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        }
+        return self._make_rest_request(values, endpoint)
+    
+    def address_groups(self, action: str, objects: str, location: str, new_config: str = None, new_name: str = None) -> Response:
+
+        if new_name:
+            endpoint = 'Objects/AddressGroups:rename'
+        else:
+            endpoint = 'Objects/AddressGroups'
+        
+        if objects == 'all':
+            object_name = None
+        else:
+            object_name = objects
+
+        loc_type = 'device-group' if location != 'shared' else 'shared'
+        device_group = None if loc_type == 'shared' else location
+
+        values = {
+            'type': action,
+            'data': new_config,
+            'params': {
+                'name': object_name,
+                'location': loc_type,
+                'device-group': device_group,
+                'newname': new_name
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        }
+        return self._make_rest_request(values, endpoint)
+    
+    def security_rules(self, action: str, location: str, name: str) -> Response:
+                
+        endpoint = 'Policies/SecurityPostRules'
+        loc_type = 'device-group' if location else 'shared'
+
+        if location:
+            loc_type = 'device-group'
+
+        values = {
+            'type': action,
+            'data': None,
+            'params': {
+                'name': name,
+                'location': loc_type,
+                'device-group': location,
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        }
+         
+        return self._make_rest_request(values, endpoint)
+    
+    def url_categories(self, action: str, location: str, name: str) -> Response:
+                
+        endpoint = 'Objects/CustomURLCategories'
+        loc_type = 'device-group' if location != 'shared' else 'shared'
+        device_group = None if loc_type == 'shared' else location
+
+        values = {
+            'type': action,
+            'data': None,
+            'params': {
+                'name': name,
+                'location': loc_type,
+                'device-group': device_group,
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        }
+         
+        return self._make_rest_request(values, endpoint)
+    
+    def services(self, action: str, name: str, location: str) -> Response:
+                
+        endpoint = 'Objects/Services'
+        loc_type = 'device-group' if location != 'shared' else 'shared'
+        device_group = None if loc_type == 'shared' else location
+
+        values = {
+            'type': action,
+            'data': None,
+            'params': {
+                'name': name,
+                'location': loc_type,
+                'device-group': device_group,
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        }
+         
+        return self._make_rest_request(values, endpoint)
+    
+    def service_groups(self, action: str, name: str, location: str) -> Response:
+                
+        endpoint = 'Objects/ServiceGroups'
+        loc_type = 'device-group' if location != 'shared' else 'shared'
+        device_group = None if loc_type == 'shared' else location
+
+        values = {
+            'type': action,
+            'data': None,
+            'params': {
+                'name': name,
+                'location': loc_type,
+                'device-group': device_group,
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
+        }
+         
+        return self._make_rest_request(values, endpoint)
+    
+    def request_portal_config(self, username: str, password: str, satellite: str, serial: str = None) -> Response:
+
+        values = {
+            'type': 'POST',
+            'params': {
+                'type': 'op',
+                'action': 'get',
+                'cmd': f'<request><global-protect-satellite><get-portal-config><username>{username}</username><password>{password}</password><satellite>{satellite}</satellite></get-portal-config></global-protect-satellite></request>',
+                'target': serial
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        return self._make_request(values)
+    
+    def get_tunnel_info(self, serial: str = None) -> Response:
+        '''
+        Gets all IPSec tunnels
+
+        :param host: String containing Panorama Hostname/Address
+        :param key: String containing API Key
+        :return: Response object
+        '''
+
+        values = {
+            'type': 'POST',
+            'params': {
+                'type': 'config',
+                'action': 'get',
+                'xpath': "/config/devices/entry[@name='localhost.localdomain']/network/tunnel/ipsec",
+                'target': serial
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        tunnel_info_data = self._make_request(values)
+        tunnel_info_root = ET.fromstring(tunnel_info_data.text)
+
+        return tunnel_info_root
+    
+    def get_satellite_info(self, gateway: str, serial: str = None) -> Response:
+
+
+        values = {
+            'type': 'POST',
+            'params': {
+                'type': 'op',
+                'action': 'get',
+                'cmd': f'<show><global-protect-satellite><satellite><name>{gateway}</name></satellite></global-protect-satellite></show>',
+                'target': serial
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        sat_info_data = self._make_request(values)
+        sat_info_root = ET.fromstring(sat_info_data.text)
+
+        return sat_info_root
+    
+    def set_portal_devices(self, portal: str, satellite: str, serial: str) -> Response:
+
+        values = {
+            'type': 'POST',
+            'params': {
+                'type': 'config',
+                'action': 'set',
+                'xpath': f"/config/devices/entry[@name='localhost.localdomain']/vsys/entry[@name='vsys3']/global-protect/global-protect-portal/entry[@name='{portal}']/satellite-config/configs/entry[@name='{satellite}']/devices",
+                'element': f'<member>{serial}</member>'
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        return self._make_request(values)
+    
+    def get_job_status(self, jobid: str) -> Response:
+
+        values = {
+            'type': 'GET',
+            'params': {
+                'type': 'op',
+                'action': 'get',
+                'cmd': f'<show><jobs><id>{jobid}</id></jobs></show>'
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        job_info_data = self._make_request(values)
+        job_info_root = ET.fromstring(job_info_data.text)
+
+        return job_info_root
+    
+    def set_bgp_export(self, vrouter: str, rule: str, prefix: str, exact: str) -> Response:
+
+        values = {
+            'type': 'POST',
+            'params': {
+                'type': 'config',
+                'action': 'set',
+                'xpath': f"/config/devices/entry[@name='localhost.localdomain']/network/virtual-router/entry[@name='{vrouter}']/protocol/bgp/policy/export/rules/entry[@name='{rule}']/match/address-prefix/entry[@name='{prefix}']",
+                'element': f'<exact>{exact}</exact>'
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        return self._make_request(values)
+    
+    def commit(self) -> str:
+
+        values = {
+            'type': 'POST',
+            'params': {
+                'type': 'commit',
+                'cmd': f'<commit></commit>'
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        commit_data = self._make_request(values)
+        commit_root = ET.fromstring(commit_data.text)
+        jobid = commit_root.find('.//job').text
+
+        return jobid
+    
+    def commit_all(self, device_group: str):
+
+        values = {
+            'type': 'POST',
+            'params': {
+                'type': 'commit',
+                'action': 'all',
+                'cmd': f"<commit-all><shared-policy><device-group><entry name='{device_group}'/></device-group></shared-policy></commit-all>"
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        commitall_data = self._make_request(values)
+        commitall_root = ET.fromstring(commitall_data.text)
+        all_jobid = commitall_root.find('.//job').text
+
+        return all_jobid
+
+    def show_gpgw_stats(self, gateway: str):
+
+        values = {
+            'type': 'POST',
+            'params': {
+                'type': 'op',
+                'action': 'get',
+                'cmd': f"<show><global-protect-gateway><statistics><gateway>{gateway}</gateway></statistics></global-protect-gateway></show>"
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        gw_data = self._make_request(values)
+        gw_root = ET.fromstring(gw_data.text)
+
+        return gw_root
+
+    def show_gpportal_stats(self, portal: str):
+
+        values = {
+            'type': 'POST',
+            'params': {
+                'type': 'op',
+                'action': 'get',
+                'cmd': f"<show><global-protect-portal><statistics><portal>{portal}</portal></statistics></global-protect-portal></show>"
+            },
+            'headers': {
+                'X-PAN-KEY': self.key,
+            }
+        }
+
+        cless_data = self._make_request(values)
+        cless_root = ET.fromstring(cless_data.text)
+
+        return cless_root
