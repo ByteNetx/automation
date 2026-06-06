@@ -1,4 +1,0 @@
-{% for srv in req_srv %}
-set shared service {{srv}} protocol {{srv.split('-')[0]}} port {{srv.split('-')[1]}}
-set shared service {{srv}} protocol {{srv.split('-')[0]}} override no
-{% endfor %}
