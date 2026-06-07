@@ -18,13 +18,14 @@ from datetime import datetime
 
 from panos.panorama import Panorama, DeviceGroup
 from panos.objects import AddressObject, AddressGroup, ServiceObject, ServiceGroup
-from panos.policies import SecurityRule, NatRule
+from panos.policies import SecurityRule, PostRulebase, PreRulebase
 
 
 @dataclass
 class VerificationResult:
     """Stores the result of an object verification check."""
     object_name: str
+    object_value: str
     object_type: str
     location_type: str  # 'Shared' or 'DeviceGroup'
     location_name: str
@@ -46,11 +47,9 @@ class PanoramaObjectVerifier:
         'address-group': AddressGroup,
         'service': ServiceObject,
         'service-group': ServiceGroup,
-        'security-rule': SecurityRule,
-        'nat-rule': NatRule,
     }
     
-    def __init__(self, hostname: str, username: str, password: str):
+    def __init__(self, hostname: str, username: str=None, password: str=None):
         """
         Initialize the Panorama verifier.
         
@@ -58,6 +57,7 @@ class PanoramaObjectVerifier:
             hostname: Panorama IP address or hostname
             username: Panorama API username
             password: Panorama API password
+            apikey: Panorama API key
         """
         self.hostname = hostname
         self.username = username
@@ -78,8 +78,6 @@ class PanoramaObjectVerifier:
                 self.username,
                 self.password
             )
-            # Refresh the device group hierarchy from Panorama
-            self.panorama.refresh()
             
             # Get all device groups
             self.device_groups = DeviceGroup.refreshall(self.panorama)
@@ -91,7 +89,7 @@ class PanoramaObjectVerifier:
             print(f"✗ Failed to connect to Panorama: {e}")
             return False
     
-    def _find_object_in_container(self, container, object_name: str, 
+    def _find_object_in_container(self, container, object_name: str, object_value: str,
                                     object_class) -> Optional[Any]:
         """
         Search for an object within a specific container (Shared or DeviceGroup).
@@ -99,6 +97,7 @@ class PanoramaObjectVerifier:
         Args:
             container: Panorama or DeviceGroup container object
             object_name: Name of the object to find
+            object_value: Value of the object to search for
             object_class: pan-os-python class of the object
             
         Returns:
@@ -107,20 +106,21 @@ class PanoramaObjectVerifier:
         try:
             objects = object_class.refreshall(container)
             for obj in objects:
-                if obj.name == object_name:
+                if obj.name == object_name or obj.value == object_value:
                     return obj
         except Exception as e:
             # Silently skip containers that don't support this object type
             pass
         return None
     
-    def _search_shared(self, object_name: str, object_type: str) -> bool:
+    def _search_shared(self, object_name: str, object_value: str, object_type: str) -> bool:
         """
         Search for an object in the Shared location.
         
         Args:
             object_name: Name of the object to search for
-            object_type: Type of object (e.g., 'address', 'service')
+            object_value: Value of the object to search for
+            object_type: Type of object (e.g., 'address', 'value', 'service')
             
         Returns:
             True if object exists in Shared, False otherwise
@@ -133,19 +133,20 @@ class PanoramaObjectVerifier:
         try:
             # Shared objects are directly under Panorama
             obj = self._find_object_in_container(
-                self.panorama, object_name, object_class
+                self.panorama, object_name, object_value, object_class
             )
-            return obj is not None
+            return obj
         except Exception as e:
             print(f"  Warning: Error searching Shared for {object_name}: {e}")
             return False
     
-    def _search_device_groups(self, object_name: str, object_type: str) -> List[Dict]:
+    def _search_device_groups(self, object_name: str, object_value: str, object_type: str) -> List[Dict]:
         """
         Search for an object across all device groups.
         
         Args:
             object_name: Name of the object to search for
+            object_value: Value of the object to search for
             object_type: Type of object (e.g., 'address', 'service')
             
         Returns:
@@ -160,7 +161,7 @@ class PanoramaObjectVerifier:
         for dg in self.device_groups:
             try:
                 dg.refresh()
-                obj = self._find_object_in_container(dg, object_name, object_class)
+                obj = self._find_object_in_container(dg, object_name, object_value, object_class)
                 if obj:
                     found_in.append({
                         'name': dg.name,
@@ -172,14 +173,15 @@ class PanoramaObjectVerifier:
                 
         return found_in
     
-    def verify_object(self, object_name: str, object_type: str) -> VerificationResult:
+    def verify_object(self, object_name: str, object_value: str, object_type: str) -> VerificationResult:
         """
         Verify if an object exists in Shared or any Device Group.
         
         Args:
             object_name: Name of the object to verify
+            object_value: Value of the object to search for
             object_type: Type of object (address, address-group, service, 
-                        service-group, security-rule, nat-rule)
+                        service-group)
                         
         Returns:
             VerificationResult containing the verification outcome
@@ -187,6 +189,7 @@ class PanoramaObjectVerifier:
         if object_type not in self.SUPPORTED_OBJECTS:
             return VerificationResult(
                 object_name=object_name,
+                object_value=object_value,
                 object_type=object_type,
                 location_type="Unknown",
                 location_name="",
@@ -195,9 +198,11 @@ class PanoramaObjectVerifier:
             )
         
         # First check Shared location
-        if self._search_shared(object_name, object_type):
+        found_obj = self._search_shared(object_name, object_value, object_type)
+        if found_obj:
             return VerificationResult(
-                object_name=object_name,
+                object_name=found_obj.name,
+                object_value=object_value,
                 object_type=object_type,
                 location_type="Shared",
                 location_name="Shared",
@@ -206,22 +211,25 @@ class PanoramaObjectVerifier:
             )
         
         # Then check all device groups
-        found_in_dgs = self._search_device_groups(object_name, object_type)
+        found_in_dgs = self._search_device_groups(object_name, object_value, object_type)
         
         if found_in_dgs:
             # Return the first found location (object can exist in multiple)
-            first_location = found_in_dgs[0]
+            location = ", ".join([x.get('name') for x in found_in_dgs])
+            obj = ", ".join([x.get('object').name for x in found_in_dgs])
             return VerificationResult(
-                object_name=object_name,
+                object_name=obj,
+                object_value=object_value,
                 object_type=object_type,
                 location_type="DeviceGroup",
-                location_name=first_location['name'],
+                location_name=location,
                 exists=True,
-                details=f"Object found in Device Group: {first_location['name']}"
+                details=f"Object found in Device Group: {location}"
             )
         
         return VerificationResult(
             object_name=object_name,
+            object_value=object_value,
             object_type=object_type,
             location_type="None",
             location_name="",
@@ -235,7 +243,7 @@ class PanoramaObjectVerifier:
         
         Args:
             objects: List of dictionaries with 'name' and 'type' keys
-                    e.g., [{'name': 'web-server', 'type': 'address'}, ...]
+                    e.g., [{'name': 'web-server', 'value': '10.1.1.1/32', 'type': 'address'}, ...]
                     
         Returns:
             List of VerificationResult objects
@@ -245,11 +253,13 @@ class PanoramaObjectVerifier:
         
         for idx, obj_info in enumerate(objects, 1):
             object_name = obj_info.get('name')
+            object_value = obj_info.get('value')
             object_type = obj_info.get('type')
             
-            if not object_name or not object_type:
+            if not object_name or not object_value or not object_type:
                 results.append(VerificationResult(
                     object_name=object_name or "Unknown",
+                    object_value=object_value or "Unknown",
                     object_type=object_type or "Unknown",
                     location_type="Error",
                     location_name="",
@@ -258,8 +268,8 @@ class PanoramaObjectVerifier:
                 ))
                 continue
             
-            print(f"  [{idx}/{total}] Checking: {object_name} ({object_type})...")
-            result = self.verify_object(object_name, object_type)
+            print(f"  [{idx}/{total}] Checking: {object_name} ({object_value}) ({object_type})...")
+            result = self.verify_object(object_name, object_value, object_type)
             results.append(result)
             
         return results
@@ -353,7 +363,7 @@ class PanoramaObjectVerifier:
         print(f"\n✓ OBJECTS FOUND ({len(found)}):")
         print("-" * 40)
         for result in found:
-            print(f"  • {result.object_name} ({result.object_type})")
+            print(f"  • {result.object_name} ({result.object_value}) ({result.object_type})")
             print(f"    Location: {result.location_type}: {result.location_name}")
             print(f"    Details: {result.details}")
             
@@ -361,7 +371,7 @@ class PanoramaObjectVerifier:
         print(f"\n✗ OBJECTS NOT FOUND ({len(not_found)}):")
         print("-" * 40)
         for result in not_found:
-            print(f"  • {result.object_name} ({result.object_type})")
+            print(f"  • {result.object_name} ({result.object_value}) ({result.object_type})")
             print(f"    Details: {result.details}")
             
         print("\n" + "=" * 80)
@@ -378,18 +388,18 @@ def parse_arguments():
     # Connection arguments
     parser.add_argument("--hostname", "-H", required=True,
                         help="Panorama hostname or IP address")
-    parser.add_argument("--username", "-u", required=True,
+    parser.add_argument("--username", "-u", type=str, required=True,
                         help="Panorama API username")
-    parser.add_argument("--password", "-p", required=True,
+    parser.add_argument("--password", "-p", type=str, required=True,
                         help="Panorama API password")
     
     # Operation mode (either verify or list)
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--verify", "-v", nargs=2, action="append",
-                       metavar=("NAME", "TYPE"),
+    group.add_argument("--verify", "-v", nargs=3, action="append",
+                       metavar=("NAME", "VALUE", "TYPE"),
                        help="Verify an object (can be used multiple times). "
                             "TYPE can be: address, address-group, service, "
-                            "service-group, security-rule, nat-rule")
+                            "service-group")
     group.add_argument("--verify-file", "-f",
                        help="JSON file containing list of objects to verify")
     group.add_argument("--list-shared", action="store_true",
@@ -399,8 +409,7 @@ def parse_arguments():
     
     # Optional filtering for list operations
     parser.add_argument("--type", "-t", choices=["address", "address-group", 
-                                                  "service", "service-group",
-                                                  "security-rule", "nat-rule"],
+                                                  "service", "service-group"],
                         help="Filter list operations by object type")
     
     return parser.parse_args()
@@ -442,8 +451,8 @@ def main():
     # Execute requested operation
     if args.verify:
         # Verify multiple objects from command line
-        objects = [{'name': name, 'type': obj_type} 
-                   for name, obj_type in args.verify]
+        objects = [{'name': name, 'value': value, 'type': obj_type} 
+                   for name, value, obj_type in args.verify]
         results = verifier.verify_multiple_objects(objects)
         verifier.print_report(results)
         
