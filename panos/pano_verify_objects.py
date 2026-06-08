@@ -1,63 +1,80 @@
 #!/usr/bin/env python3
 """
-Panorama Object Location Verifier
+Panorama Object Discovery and Value Verification
 
-This script connects to Palo Alto Panorama and verifies whether specified
-objects (address objects, address groups, service objects, etc.) exist
-in the Shared location or within specific Device Groups.
+This script connects to Palo Alto Panorama and can:
+1. Verify if an object NAME exists in Shared or Device Groups
+2. Search for objects containing a specific VALUE (IP, subnet, FQDN, port, etc.)
+3. Find where a particular IP/port/service is being used
 
 Requirements:
     pan-os-python (pip install pan-os-python)
+    ipaddress (built-in)
 """
 
 import argparse
 import sys
-from typing import List, Dict, Optional, Any
-from dataclasses import dataclass
+import re
+from typing import List, Dict, Optional, Any, Union, Tuple
+from dataclasses import dataclass, field
 from datetime import datetime
+from ipaddress import ip_address, ip_network, ip_interface, IPv4Address, IPv6Address
 
 from panos.panorama import Panorama, DeviceGroup
-from panos.objects import AddressObject, AddressGroup, ServiceObject, ServiceGroup
-from panos.policies import SecurityRule, PostRulebase, PreRulebase
+from panos.objects import (
+    AddressObject, AddressGroup, ServiceObject, 
+    ServiceGroup, Tag, ApplicationObject
+)
+from panos.policies import SecurityRule, NatRule, PostRulebase, PreRulebase
+from panos.network import Interface
 
 
 @dataclass
-class VerificationResult:
-    """Stores the result of an object verification check."""
-    object_name: str
-    object_value: str
-    object_type: str
-    location_type: str  # 'Shared' or 'DeviceGroup'
-    location_name: str
-    exists: bool
-    details: Optional[str] = None
+class SearchResult:
+    """Stores the result of a search operation."""
+    search_term: str
+    search_type: str  # 'name' or 'value'
+    found_objects: List[Dict] = field(default_factory=list)
+    
+    def add_result(self, object_name: str, object_type: str, location_type: str, 
+                   location_name: str, matched_field: str, matched_value: str = None):
+        """Add a found object to the results."""
+        self.found_objects.append({
+            'object_name': object_name,
+            'object_type': object_type,
+            'location_type': location_type,
+            'location_name': location_name,
+            'matched_field': matched_field,
+            'matched_value': matched_value
+        })
+    
+    @property
+    def count(self) -> int:
+        return len(self.found_objects)
 
 
-class PanoramaObjectVerifier:
+class PanoramaObjectSearcher:
     """
-    Verifies existence of objects in Panorama Shared or Device Group locations.
+    Search for objects in Panorama by name or by value.
     
-    This class handles connection to Panorama and provides methods to search
-    for various object types across different configuration contexts.
+    Can search for:
+    - Object names (exact or partial match)
+    - IP addresses/subnets in Address Objects
+    - FQDN values in Address Objects
+    - Port numbers in Service Objects
+    - Protocol values in Service Objects
+    - Tag values
+    - Object references in policies
     """
     
-    # Supported object types and their corresponding pan-os-python classes
-    SUPPORTED_OBJECTS = {
-        'address': AddressObject,
-        'address-group': AddressGroup,
-        'service': ServiceObject,
-        'service-group': ServiceGroup,
-    }
-    
-    def __init__(self, hostname: str, username: str=None, password: str=None):
+    def __init__(self, hostname: str, username: str, password: str):
         """
-        Initialize the Panorama verifier.
+        Initialize the Panorama searcher.
         
         Args:
             hostname: Panorama IP address or hostname
             username: Panorama API username
             password: Panorama API password
-            apikey: Panorama API key
         """
         self.hostname = hostname
         self.username = username
@@ -78,426 +95,706 @@ class PanoramaObjectVerifier:
                 self.username,
                 self.password
             )
-            
-            # Get all device groups
             self.device_groups = DeviceGroup.refreshall(self.panorama)
             print(f"✓ Connected to Panorama: {self.hostname}")
             print(f"✓ Found {len(self.device_groups)} Device Group(s)")
             return True
-            
         except Exception as e:
             print(f"✗ Failed to connect to Panorama: {e}")
             return False
     
-    def _find_object_in_container(self, container, object_name: str, object_value: str,
-                                    object_class) -> Optional[Any]:
+    def search_address_objects_by_value(self, container, search_value: str) -> List[Dict]:
         """
-        Search for an object within a specific container (Shared or DeviceGroup).
+        Search address objects for matching IP, subnet, or FQDN.
         
         Args:
-            container: Panorama or DeviceGroup container object
-            object_name: Name of the object to find
-            object_value: Value of the object to search for
-            object_class: pan-os-python class of the object
+            container: Panorama or DeviceGroup object
+            search_value: IP address, subnet (CIDR), or FQDN to search for
             
         Returns:
-            The object if found, None otherwise
+            List of matching address objects with details
         """
+        matches = []
         try:
-            objects = object_class.refreshall(container)
-            for obj in objects:
-                if obj.name == object_name or obj.value == object_value:
-                    return obj
+            address_objects = AddressObject.refreshall(container)
+            
+            for addr_obj in address_objects:
+                matched_field = None
+                matched_value = None
+                
+                # Check IPv4/IPv6 address
+                if hasattr(addr_obj, 'value') and addr_obj.value:
+                    if self._ip_matches(search_value, addr_obj.value):
+                        matched_field = "value"
+                        matched_value = addr_obj.value
+                
+                # Check FQDN
+                elif hasattr(addr_obj, 'fqdn') and addr_obj.fqdn:
+                    if self._fqdn_matches(search_value, addr_obj.fqdn):
+                        matched_field = "fqdn"
+                        matched_value = addr_obj.fqdn
+                
+                # Check IP range
+                elif hasattr(addr_obj, 'ip_range') and addr_obj.ip_range:
+                    if self._ip_range_matches(search_value, addr_obj.ip_range):
+                        matched_field = "ip_range"
+                        matched_value = addr_obj.ip_range
+                
+                if matched_field:
+                    matches.append({
+                        'name': addr_obj.name,
+                        'type': 'address',
+                        'matched_field': matched_field,
+                        'matched_value': matched_value,
+                        'full_object': addr_obj
+                    })
         except Exception as e:
-            # Silently skip containers that don't support this object type
             pass
-        return None
+            
+        return matches
     
-    def _search_shared(self, object_name: str, object_value: str, object_type: str) -> bool:
+    def search_service_objects_by_value(self, container, search_value: str) -> List[Dict]:
         """
-        Search for an object in the Shared location.
+        Search service objects for matching port, protocol, or port range.
         
         Args:
-            object_name: Name of the object to search for
-            object_value: Value of the object to search for
-            object_type: Type of object (e.g., 'address', 'value', 'service')
+            container: Panorama or DeviceGroup object
+            search_value: Port number, protocol, or service name to search
             
         Returns:
-            True if object exists in Shared, False otherwise
+            List of matching service objects
         """
-        if object_type not in self.SUPPORTED_OBJECTS:
-            return False
-            
-        object_class = self.SUPPORTED_OBJECTS[object_type]
-        
+        matches = []
         try:
-            # Shared objects are directly under Panorama
-            obj = self._find_object_in_container(
-                self.panorama, object_name, object_value, object_class
-            )
-            return obj
+            service_objects = ServiceObject.refreshall(container)
+            
+            for svc_obj in service_objects:
+                matched_fields = []
+                
+                # Check destination port
+                if hasattr(svc_obj, 'destination_port') and svc_obj.destination_port:
+                    if self._port_matches(search_value, svc_obj.destination_port):
+                        matched_fields.append(('destination_port', svc_obj.destination_port))
+                
+                # Check source port
+                if hasattr(svc_obj, 'source_port') and svc_obj.source_port:
+                    if self._port_matches(search_value, svc_obj.source_port):
+                        matched_fields.append(('source_port', svc_obj.source_port))
+                
+                # Check protocol
+                if hasattr(svc_obj, 'protocol') and svc_obj.protocol:
+                    if search_value.lower() == svc_obj.protocol.lower():
+                        matched_fields.append(('protocol', svc_obj.protocol))
+                
+                # Check port range
+                if hasattr(svc_obj, 'destination_port') and svc_obj.destination_port:
+                    if '-' in search_value and self._in_port_range(search_value, svc_obj.destination_port):
+                        matched_fields.append(('dest_port_range', svc_obj.destination_port))
+                
+                for field, value in matched_fields:
+                    matches.append({
+                        'name': svc_obj.name,
+                        'type': 'service',
+                        'matched_field': field,
+                        'matched_value': value,
+                        'full_object': svc_obj
+                    })
         except Exception as e:
-            print(f"  Warning: Error searching Shared for {object_name}: {e}")
-            return False
+            pass
+            
+        return matches
     
-    def _search_device_groups(self, object_name: str, object_value: str, object_type: str) -> List[Dict]:
+    def search_tag_objects_by_value(self, container, search_value: str) -> List[Dict]:
         """
-        Search for an object across all device groups.
+        Search tag objects for matching tag color or comment.
         
         Args:
-            object_name: Name of the object to search for
-            object_value: Value of the object to search for
-            object_type: Type of object (e.g., 'address', 'service')
+            container: Panorama or DeviceGroup object
+            search_value: Tag name, color, or comment to search
             
         Returns:
-            List of dictionaries containing device group locations where object exists
+            List of matching tag objects
         """
-        if object_type not in self.SUPPORTED_OBJECTS:
-            return []
+        matches = []
+        try:
+            tag_objects = Tag.refreshall(container)
             
-        object_class = self.SUPPORTED_OBJECTS[object_type]
-        found_in = []
+            for tag_obj in tag_objects:
+                matched_field = None
+                matched_value = None
+                
+                # Check tag name
+                if search_value.lower() in tag_obj.name.lower():
+                    matched_field = "name"
+                    matched_value = tag_obj.name
+                
+                # Check tag color
+                elif hasattr(tag_obj, 'color') and tag_obj.color:
+                    if search_value.lower() in tag_obj.color.lower():
+                        matched_field = "color"
+                        matched_value = tag_obj.color
+                
+                if matched_field:
+                    matches.append({
+                        'name': tag_obj.name,
+                        'type': 'tag',
+                        'matched_field': matched_field,
+                        'matched_value': matched_value,
+                        'full_object': tag_obj
+                    })
+        except Exception as e:
+            pass
+            
+        return matches
+    
+    def search_address_groups_by_member(self, container, search_value: str) -> List[Dict]:
+        """
+        Search address groups that contain a specific address object.
         
+        Args:
+            container: Panorama or DeviceGroup object
+            search_value: Address object name or value to search for in groups
+            
+        Returns:
+            List of address groups containing the search value
+        """
+        matches = []
+        try:
+            address_groups = AddressGroup.refreshall(container)
+            
+            for group in address_groups:
+                if hasattr(group, 'static_value') and group.static_value:
+                    for member in group.static_value:
+                        if search_value.lower() == member.lower():
+                            matches.append({
+                                'name': group.name,
+                                'type': 'address-group',
+                                'matched_field': 'static_value',
+                                'matched_value': member,
+                                'full_object': group
+                            })
+                            break
+        except Exception as e:
+            pass
+            
+        return matches
+    
+    def search_service_groups_by_member(self, container, search_value: str) -> List[Dict]:
+        """
+        Search service groups that contain a specific service object.
+        
+        Args:
+            container: Panorama or DeviceGroup object
+            search_value: Service object name to search for in groups
+            
+        Returns:
+            List of service groups containing the search value
+        """
+        matches = []
+        try:
+            service_groups = ServiceGroup.refreshall(container)
+            
+            for group in service_groups:
+                if hasattr(group, 'value') and group.value:
+                    for member in group.value:
+                        if search_value.lower() == member.lower():
+                            matches.append({
+                                'name': group.name,
+                                'type': 'service-group',
+                                'matched_field': 'members',
+                                'matched_value': member,
+                                'full_object': group
+                            })
+                            break
+        except Exception as e:
+            pass
+            
+        return matches
+    
+    def search_policies_by_reference(self, container, search_value: str) -> List[Dict]:
+        """
+        Search security and NAT policies that reference a specific object.
+        
+        Args:
+            container: Panorama or DeviceGroup container (Panorama or DG)
+            search_value: Object name or value to search in policies
+            
+        Returns:
+            List of policies referencing the search value
+        """
+        matches = []
+        
+        # Check pre-rules (rulebase)
+        for rulebase in [PreRulebase, PostRulebase]:
+            try:
+                if hasattr(container, rulebase.__name__):
+                    rulebase_obj = getattr(container, rulebase.__name__)
+                    if rulebase_obj:
+                        rules = SecurityRule.refreshall(rulebase_obj)
+                        
+                        for rule in rules:
+                            matched_fields = []
+                            
+                            # Check source addresses
+                            if hasattr(rule, 'source') and rule.source:
+                                for src in rule.source:
+                                    if search_value.lower() == src.lower():
+                                        matched_fields.append(('source', src))
+                            
+                            # Check destination addresses
+                            if hasattr(rule, 'destination') and rule.destination:
+                                for dst in rule.destination:
+                                    if search_value.lower() == dst.lower():
+                                        matched_fields.append(('destination', dst))
+                            
+                            # Check services/applications
+                            if hasattr(rule, 'service') and rule.service:
+                                if search_value.lower() == rule.service.lower():
+                                    matched_fields.append(('service', rule.service))
+                            
+                            if hasattr(rule, 'application') and rule.application:
+                                for app in rule.application:
+                                    if search_value.lower() == app.lower():
+                                        matched_fields.append(('application', app))
+                            
+                            for field, value in matched_fields:
+                                matches.append({
+                                    'name': rule.name,
+                                    'type': 'security-rule',
+                                    'matched_field': field,
+                                    'matched_value': value,
+                                    'full_object': rule
+                                })
+            except Exception:
+                pass
+        
+        # Check NAT rules
+        try:
+            nat_rules = NatRule.refreshall(container)
+            for rule in nat_rules:
+                matched_fields = []
+                
+                if hasattr(rule, 'source_addresses') and rule.source_addresses:
+                    for src in rule.source_addresses:
+                        if search_value.lower() == src.lower():
+                            matched_fields.append(('source_addresses', src))
+                
+                if hasattr(rule, 'destination_addresses') and rule.destination_addresses:
+                    for dst in rule.destination_addresses:
+                        if search_value.lower() == dst.lower():
+                            matched_fields.append(('destination_addresses', dst))
+                
+                if hasattr(rule, 'source_translation_type') and rule.source_translation_type:
+                    if search_value.lower() in str(rule.source_translation_type).lower():
+                        matched_fields.append(('source_translation_type', rule.source_translation_type))
+                
+                for field, value in matched_fields:
+                    matches.append({
+                        'name': rule.name,
+                        'type': 'nat-rule',
+                        'matched_field': field,
+                        'matched_value': value,
+                        'full_object': rule
+                    })
+        except Exception:
+            pass
+            
+        return matches
+    
+    def search_by_name(self, search_name: str, object_type: str = None, 
+                       exact_match: bool = True) -> SearchResult:
+        """
+        Search for objects by name.
+        
+        Args:
+            search_name: Name to search for (can include wildcard *)
+            object_type: Optional specific object type to search
+            exact_match: If True, search for exact name; if False, partial match
+            
+        Returns:
+            SearchResult object containing all matches
+        """
+        result = SearchResult(search_name, 'name')
+        
+        # Determine which object types to search
+        if object_type:
+            types_to_search = [object_type]
+        else:
+            types_to_search = ['address', 'address-group', 'service', 
+                              'service-group', 'tag', 'security-rule', 'nat-rule']
+        
+        # Search in Shared
+        for obj_type in types_to_search:
+            matches = self._search_by_name_in_container(
+                self.panorama, search_name, obj_type, 'Shared', 'Shared', exact_match
+            )
+            for match in matches:
+                result.add_result(**match)
+        
+        # Search in Device Groups
         for dg in self.device_groups:
             try:
                 dg.refresh()
-                obj = self._find_object_in_container(dg, object_name, object_value, object_class)
-                if obj:
-                    found_in.append({
-                        'name': dg.name,
-                        'object': obj
-                    })
-            except Exception as e:
-                # Skip device groups that cause errors
-                continue
-                
-        return found_in
-    
-    def verify_object(self, object_name: str, object_value: str, object_type: str) -> VerificationResult:
-        """
-        Verify if an object exists in Shared or any Device Group.
-        
-        Args:
-            object_name: Name of the object to verify
-            object_value: Value of the object to search for
-            object_type: Type of object (address, address-group, service, 
-                        service-group)
-                        
-        Returns:
-            VerificationResult containing the verification outcome
-        """
-        if object_type not in self.SUPPORTED_OBJECTS:
-            return VerificationResult(
-                object_name=object_name,
-                object_value=object_value,
-                object_type=object_type,
-                location_type="Unknown",
-                location_name="",
-                exists=False,
-                details=f"Unsupported object type: {object_type}"
-            )
-        
-        # First check Shared location
-        found_obj = self._search_shared(object_name, object_value, object_type)
-        if found_obj:
-            return VerificationResult(
-                object_name=found_obj.name,
-                object_value=object_value,
-                object_type=object_type,
-                location_type="Shared",
-                location_name="Shared",
-                exists=True,
-                details="Object found in Shared configuration"
-            )
-        
-        # Then check all device groups
-        found_in_dgs = self._search_device_groups(object_name, object_value, object_type)
-        
-        if found_in_dgs:
-            # Return the first found location (object can exist in multiple)
-            location = ", ".join([x.get('name') for x in found_in_dgs])
-            obj = ", ".join([x.get('object').name for x in found_in_dgs])
-            return VerificationResult(
-                object_name=obj,
-                object_value=object_value,
-                object_type=object_type,
-                location_type="DeviceGroup",
-                location_name=location,
-                exists=True,
-                details=f"Object found in Device Group: {location}"
-            )
-        
-        return VerificationResult(
-            object_name=object_name,
-            object_value=object_value,
-            object_type=object_type,
-            location_type="None",
-            location_name="",
-            exists=False,
-            details="Object not found in Shared or any Device Group"
-        )
-    
-    def verify_multiple_objects(self, objects: List[Dict]) -> List[VerificationResult]:
-        """
-        Verify multiple objects.
-        
-        Args:
-            objects: List of dictionaries with 'name' and 'type' keys
-                    e.g., [{'name': 'web-server', 'value': '10.1.1.1/32', 'type': 'address'}, ...]
-                    
-        Returns:
-            List of VerificationResult objects
-        """
-        results = []
-        total = len(objects)
-        
-        for idx, obj_info in enumerate(objects, 1):
-            object_name = obj_info.get('name')
-            object_value = obj_info.get('value')
-            object_type = obj_info.get('type')
-            
-            if not object_name or not object_value or not object_type:
-                results.append(VerificationResult(
-                    object_name=object_name or "Unknown",
-                    object_value=object_value or "Unknown",
-                    object_type=object_type or "Unknown",
-                    location_type="Error",
-                    location_name="",
-                    exists=False,
-                    details="Missing name or type in input"
-                ))
-                continue
-            
-            print(f"  [{idx}/{total}] Checking: {object_name} ({object_value}) ({object_type})...")
-            result = self.verify_object(object_name, object_value, object_type)
-            results.append(result)
-            
-        return results
-    
-    def list_shared_objects(self, object_type: str = None) -> Dict[str, List[str]]:
-        """
-        List all objects in Shared location, optionally filtered by type.
-        
-        Args:
-            object_type: Optional object type to filter by
-            
-        Returns:
-            Dictionary mapping object types to lists of object names
-        """
-        shared_objects = {}
-        
-        types_to_check = [object_type] if object_type else self.SUPPORTED_OBJECTS.keys()
-        
-        for obj_type in types_to_check:
-            if obj_type not in self.SUPPORTED_OBJECTS:
-                continue
-                
-            object_class = self.SUPPORTED_OBJECTS[obj_type]
-            shared_objects[obj_type] = []
-            
-            try:
-                objects = object_class.refreshall(self.panorama)
-                shared_objects[obj_type] = [obj.name for obj in objects]
+                for obj_type in types_to_search:
+                    matches = self._search_by_name_in_container(
+                        dg, search_name, obj_type, 'DeviceGroup', dg.name, exact_match
+                    )
+                    for match in matches:
+                        result.add_result(**match)
             except Exception:
-                shared_objects[obj_type] = []
-                
-        return shared_objects
-    
-    def list_device_group_objects(self, device_group_name: str = None, 
-                                   object_type: str = None) -> Dict[str, Dict[str, List[str]]]:
-        """
-        List objects in Device Groups, optionally filtered by group name and type.
+                continue
         
-        Args:
-            device_group_name: Optional device group name to filter
-            object_type: Optional object type to filter
-            
-        Returns:
-            Nested dictionary: device_group -> object_type -> list of object names
-        """
-        result = {}
-        groups_to_check = [dg for dg in self.device_groups 
-                          if not device_group_name or dg.name == device_group_name]
-        
-        types_to_check = [object_type] if object_type else self.SUPPORTED_OBJECTS.keys()
-        
-        for dg in groups_to_check:
-            try:
-                dg.refresh()
-                result[dg.name] = {}
-                
-                for obj_type in types_to_check:
-                    if obj_type not in self.SUPPORTED_OBJECTS:
-                        continue
-                        
-                    object_class = self.SUPPORTED_OBJECTS[obj_type]
-                    result[dg.name][obj_type] = []
-                    
-                    try:
-                        objects = object_class.refreshall(dg)
-                        result[dg.name][obj_type] = [obj.name for obj in objects]
-                    except Exception:
-                        result[dg.name][obj_type] = []
-                        
-            except Exception as e:
-                result[dg.name] = {'error': str(e)}
-                
         return result
     
-    def print_report(self, results: List[VerificationResult]) -> None:
+    def _search_by_name_in_container(self, container, search_name: str, 
+                                      object_type: str, location_type: str, 
+                                      location_name: str, exact_match: bool) -> List[Dict]:
+        """Helper method to search for objects by name in a specific container."""
+        matches = []
+        
+        try:
+            if object_type == 'address':
+                objects = AddressObject.refreshall(container)
+            elif object_type == 'address-group':
+                objects = AddressGroup.refreshall(container)
+            elif object_type == 'service':
+                objects = ServiceObject.refreshall(container)
+            elif object_type == 'service-group':
+                objects = ServiceGroup.refreshall(container)
+            elif object_type == 'tag':
+                objects = Tag.refreshall(container)
+            elif object_type == 'security-rule':
+                objects = SecurityRule.refreshall(container)
+            elif object_type == 'nat-rule':
+                objects = NatRule.refreshall(container)
+            else:
+                return []
+            
+            for obj in objects:
+                obj_name = getattr(obj, 'name', '')
+                if exact_match:
+                    if obj_name == search_name:
+                        matches.append({
+                            'object_name': obj_name,
+                            'object_type': object_type,
+                            'location_type': location_type,
+                            'location_name': location_name,
+                            'matched_field': 'name',
+                            'matched_value': obj_name
+                        })
+                else:
+                    if search_name.lower() in obj_name.lower():
+                        matches.append({
+                            'object_name': obj_name,
+                            'object_type': object_type,
+                            'location_type': location_type,
+                            'location_name': location_name,
+                            'matched_field': 'name',
+                            'matched_value': obj_name
+                        })
+        except Exception:
+            pass
+            
+        return matches
+    
+    def search_by_value(self, search_value: str,
+                        object_type: str = None, include_policies: bool = True) -> SearchResult:
         """
-        Print a formatted report of verification results.
+        Search for objects containing a specific value (IP, port, FQDN, etc.).
         
         Args:
-            results: List of VerificationResult objects
+            search_value: Value to search for (IP address, subnet, port, FQDN)
+            include_policies: Whether to also search in policy references
+            
+        Returns:
+            SearchResult object containing all matches
         """
+        result = SearchResult(search_value, 'value')
+        
+        # Helper to search in a container
+        def search_container(container, obj_type, location_type, location_name):
+            # Search address objects
+            if obj_type == 'address':
+                for match in self.search_address_objects_by_value(container, search_value):
+                    result.add_result(
+                        object_name=match['name'],
+                        object_type=match['type'],
+                        location_type=location_type,
+                        location_name=location_name,
+                        matched_field=match['matched_field'],
+                        matched_value=match['matched_value']
+                    )
+            
+            # Search service objects
+            if obj_type == 'service':
+                for match in self.search_service_objects_by_value(container, search_value):
+                    result.add_result(
+                        object_name=match['name'],
+                        object_type=match['type'],
+                        location_type=location_type,
+                        location_name=location_name,
+                        matched_field=match['matched_field'],
+                        matched_value=match['matched_value']
+                    )
+            
+            # Search address groups (by member name)
+            if obj_type == 'address-group':
+                for match in self.search_address_groups_by_member(container, search_value):
+                    result.add_result(
+                        object_name=match['name'],
+                        object_type=match['type'],
+                        location_type=location_type,
+                        location_name=location_name,
+                        matched_field=match['matched_field'],
+                        matched_value=match['matched_value']
+                    )
+            
+            # Search service groups (by member name)
+            if obj_type == 'service-group':
+                for match in self.search_service_groups_by_member(container, search_value):
+                    result.add_result(
+                        object_name=match['name'],
+                        object_type=match['type'],
+                        location_type=location_type,
+                        location_name=location_name,
+                        matched_field=match['matched_field'],
+                        matched_value=match['matched_value']
+                    )
+            
+            # Search tags
+            if obj_type == 'tag':
+                for match in self.search_tag_objects_by_value(container, search_value):
+                    result.add_result(
+                        object_name=match['name'],
+                        object_type=match['type'],
+                        location_type=location_type,
+                        location_name=location_name,
+                        matched_field=match['matched_field'],
+                        matched_value=match['matched_value']
+                    )
+            
+            # Search policies
+            if include_policies:
+                for match in self.search_policies_by_reference(container, search_value):
+                    result.add_result(
+                        object_name=match['name'],
+                        object_type=match['type'],
+                        location_type=location_type,
+                        location_name=location_name,
+                        matched_field=match['matched_field'],
+                        matched_value=match['matched_value']
+                    )
+        
+        if object_type:
+            types_to_search = [object_type]
+        else:
+            types_to_search = ['address', 'address-group', 'service', 
+                              'service-group', 'tag']
+        # Search in Shared
+        for obj_type in types_to_search:
+            search_container(self.panorama, obj_type, 'Shared', 'Shared')
+        
+        # Search in Device Groups
+        for obj_type in types_to_search:
+            for dg in self.device_groups:
+                try:
+                    dg.refresh()
+                    search_container(dg, obj_type, 'DeviceGroup', dg.name)
+                except Exception:
+                    continue
+        
+        return result
+    
+    def _ip_matches(self, search_value: str, object_value: str) -> bool:
+        """Check if search value matches an IP address or subnet."""
+        try:
+            # Exact match
+            if search_value == object_value:
+                return True
+
+            # Check if IP is within subnet
+            if '/' in object_value:  # Object is a subnet
+                try:
+                    network = ip_network(object_value, strict=False)
+                    search_ip = ip_address(search_value)
+                    return search_ip in network
+                except:
+                    pass
+            
+            # Check if subnet is within larger subnet
+            if '/' in search_value:  # Searching for a subnet
+                try:
+                    search_network = ip_network(search_value, strict=False)
+                    obj_ip = ip_address(object_value)
+                    return obj_ip in search_network
+                except:
+                    pass
+            
+            # Check wildcard matches (e.g., 192.168.*)
+            if '*' in search_value:
+                pattern = search_value.replace('.', r'\.').replace('*', '.*')
+                if re.match(pattern, object_value):
+                    return True
+            
+            return False
+        except:
+            return search_value.lower() in object_value.lower()
+    
+    def _fqdn_matches(self, search_value: str, fqdn_value: str) -> bool:
+        """Check if search value matches an FQDN."""
+        search_lower = search_value.lower()
+        fqdn_lower = fqdn_value.lower()
+        
+        # Exact match
+        if search_lower == fqdn_lower:
+            return True
+        
+        # Wildcard match
+        if '*' in search_value:
+            pattern = search_value.replace('.', r'\.').replace('*', '.*')
+            if re.match(pattern, fqdn_lower):
+                return True
+        
+        # Partial match (contains)
+        if search_lower in fqdn_lower:
+            return True
+        
+        return False
+    
+    def _ip_range_matches(self, search_value: str, ip_range: str) -> bool:
+        """Check if search value matches an IP range."""
+        if '-' in ip_range:
+            try:
+                start_ip, end_ip = map(str, search_value.split('-'))
+                start, end = map(str, ip_range.split('-'))
+                return ip_address(start.strip()) <= ip_address(start_ip.strip()) and ip_address(end_ip.strip()) <= ip_address(end.strip())
+            except:
+                pass
+        return search_value in ip_range
+    
+    def _port_matches(self, search_value: str, port_value: str) -> bool:
+        """Check if search value matches a port number."""
+        try:
+            if '-' in port_value:
+                return search_value == port_value
+            else:
+                return int(search_value) == int(port_value)
+        except:
+            return False
+    
+    def _in_port_range(self, search_value: str, port_range: str) -> bool:
+        """Check if a port falls within a port range."""
+        try:
+            start_port, end_port = map(int, search_value.split('-'))
+            if '-' in port_range:
+                start, end = map(int, port_range.split('-'))
+                return start <= start_port and end_port <= end
+        except:
+            return False
+    
+    def print_search_results(self, result: SearchResult):
+        """Pretty print search results."""
         print("\n" + "=" * 80)
-        print("VERIFICATION REPORT")
+        print(f"SEARCH RESULTS: {result.search_type.upper()} = '{result.search_term}'")
         print("=" * 80)
         
-        # Separate results by existence
-        found = [r for r in results if r.exists]
-        not_found = [r for r in results if not r.exists]
+        if result.count == 0:
+            print("\n❌ No matching objects found.\n")
+            return
         
-        # Print found objects
-        print(f"\n✓ OBJECTS FOUND ({len(found)}):")
-        print("-" * 40)
-        for result in found:
-            print(f"  • {result.object_name} ({result.object_value}) ({result.object_type})")
-            print(f"    Location: {result.location_type}: {result.location_name}")
-            print(f"    Details: {result.details}")
+        print(f"\n✅ Found {result.count} match(es):\n")
+        
+        # Group by location and type
+        by_location = {}
+        for obj in result.found_objects:
+            loc_key = f"{obj['location_type']}: {obj['location_name']}"
+            if loc_key not in by_location:
+                by_location[loc_key] = []
+            by_location[loc_key].append(obj)
+        
+        for location, objects in by_location.items():
+            print(f"📍 {location}")
+            print("-" * 40)
             
-        # Print not found objects
-        print(f"\n✗ OBJECTS NOT FOUND ({len(not_found)}):")
-        print("-" * 40)
-        for result in not_found:
-            print(f"  • {result.object_name} ({result.object_value}) ({result.object_type})")
-            print(f"    Details: {result.details}")
+            # Group by object type
+            by_type = {}
+            for obj in objects:
+                obj_type = obj['object_type'].upper()
+                if obj_type not in by_type:
+                    by_type[obj_type] = []
+                by_type[obj_type].append(obj)
             
+            for obj_type, type_objects in by_type.items():
+                print(f"\n  📦 {obj_type}:")
+                for obj in type_objects:
+                    print(f"    • {obj['object_name']}")
+                    print(f"      - Matched field: {obj['matched_field']} = {obj['matched_value']}")
+        
         print("\n" + "=" * 80)
-        print(f"Summary: {len(found)} found, {len(not_found)} not found")
-        print("=" * 80)
 
 
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Verify existence of objects in Panorama Shared or Device Groups"
+        description="Search Panorama for objects by name or value"
     )
     
     # Connection arguments
     parser.add_argument("--hostname", "-H", required=True,
                         help="Panorama hostname or IP address")
-    parser.add_argument("--username", "-u", type=str, required=True,
+    parser.add_argument("--username", "-u", required=True,
                         help="Panorama API username")
-    parser.add_argument("--password", "-p", type=str, required=True,
+    parser.add_argument("--password", "-p", required=True,
                         help="Panorama API password")
     
-    # Operation mode (either verify or list)
+    # Search arguments
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--verify", "-v", nargs=3, action="append",
-                       metavar=("NAME", "VALUE", "TYPE"),
-                       help="Verify an object (can be used multiple times). "
-                            "TYPE can be: address, address-group, service, "
-                            "service-group")
-    group.add_argument("--verify-file", "-f",
-                       help="JSON file containing list of objects to verify")
-    group.add_argument("--list-shared", action="store_true",
-                       help="List all objects in Shared location")
-    group.add_argument("--list-dg", "-l", nargs="?", const="all",
-                       help="List objects in Device Groups (optional: specific DG name)")
+    group.add_argument("--search-name", "-n", 
+                       help="Search for object by exact name")
+    group.add_argument("--search-name-partial", "-np",
+                       help="Search for object by partial name (contains)")
+    group.add_argument("--search-value", "-v",
+                       help="Search for value (IP, port, FQDN, etc.)")
     
-    # Optional filtering for list operations
-    parser.add_argument("--type", "-t", choices=["address", "address-group", 
-                                                  "service", "service-group"],
-                        help="Filter list operations by object type")
+    # Optional filters
+    parser.add_argument("--type", "-t", 
+                        choices=["address", "address-group", "service", 
+                                "service-group", "tag", "security-rule", "nat-rule"],
+                        help="Filter search by object type")
+    parser.add_argument("--no-policies", action="store_true",
+                        help="Exclude policy references from value search")
     
     return parser.parse_args()
 
 
-def load_objects_from_file(filepath: str) -> List[Dict]:
-    """Load object list from JSON file."""
-    import json
-    try:
-        with open(filepath, 'r') as f:
-            data = json.load(f)
-        if isinstance(data, list):
-            return data
-        elif isinstance(data, dict) and 'objects' in data:
-            return data['objects']
-        else:
-            print(f"Error: Invalid JSON format. Expected list or dict with 'objects' key.")
-            return []
-    except Exception as e:
-        print(f"Error loading file: {e}")
-        return []
-
-
 def main():
-    """Main entry point for the script."""
+    """Main entry point."""
     args = parse_arguments()
     
-    # Create verifier instance
-    verifier = PanoramaObjectVerifier(
+    # Create searcher instance
+    searcher = PanoramaObjectSearcher(
         args.hostname,
         args.username,
         args.password
     )
     
     # Connect to Panorama
-    if not verifier.connect():
+    if not searcher.connect():
         sys.exit(1)
     
-    # Execute requested operation
-    if args.verify:
-        # Verify multiple objects from command line
-        objects = [{'name': name, 'value': value, 'type': obj_type} 
-                   for name, value, obj_type in args.verify]
-        results = verifier.verify_multiple_objects(objects)
-        verifier.print_report(results)
-        
-    elif args.verify_file:
-        # Verify objects from JSON file
-        objects = load_objects_from_file(args.verify_file)
-        if not objects:
-            sys.exit(1)
-        results = verifier.verify_multiple_objects(objects)
-        verifier.print_report(results)
-        
-    elif args.list_shared:
-        # List Shared objects
-        print(f"\nShared Location Objects:")
-        print("=" * 50)
-        shared_objs = verifier.list_shared_objects(args.type)
-        for obj_type, obj_names in shared_objs.items():
-            if obj_names:
-                print(f"\n{obj_type.upper()} ({len(obj_names)}):")
-                for name in obj_names:
-                    print(f"  • {name}")
-        if not any(shared_objs.values()):
-            print("No objects found in Shared location")
-            
-    elif args.list_dg:
-        # List Device Group objects
-        dg_name = None if args.list_dg == "all" else args.list_dg
-        result = verifier.list_device_group_objects(dg_name, args.type)
-        
-        print(f"\nDevice Group Objects:")
-        print("=" * 50)
-        for dg_name, contents in result.items():
-            if 'error' in contents:
-                print(f"\n{dg_name}: Error - {contents['error']}")
-            else:
-                has_objects = any(contents.values())
-                if has_objects:
-                    print(f"\n{dg_name}:")
-                    for obj_type, obj_names in contents.items():
-                        if obj_names:
-                            print(f"  {obj_type.upper()} ({len(obj_names)}):")
-                            for name in obj_names:
-                                print(f"    • {name}")
-                else:
-                    print(f"\n{dg_name}: No objects of specified type(s)")
+    # Execute search
+    if args.search_name:
+        result = searcher.search_by_name(args.search_name, args.type, exact_match=True)
+    elif args.search_name_partial:
+        result = searcher.search_by_name(args.search_name_partial, args.type, exact_match=False)
+    elif args.search_value:
+        result = searcher.search_by_value(args.search_value, args.type, not args.no_policies)
+    else:
+        print("Error: No search specified")
+        sys.exit(1)
+    
+    # Print results
+    searcher.print_search_results(result)
 
 
 if __name__ == "__main__":
