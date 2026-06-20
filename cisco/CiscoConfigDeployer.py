@@ -18,18 +18,18 @@ import yaml
 from encryption import CredentialManager
 from pathlib import Path
 
+basePath = Path.home() / 'pyenv3.13' / 'cisco'
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f'switch_update_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'),
+        logging.FileHandler(f'{basePath}/logs/switch_update_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
-
-basePath = Path.home() / 'pyenv3.13' / 'cisco'
 
 class CiscoSwitchDeployer:
     def __init__(self, config_file, username: str=None, password: str=None):
@@ -299,7 +299,7 @@ class CiscoSwitchDeployer:
                 
         return result
         
-    def update_all_switches(self, max_workers=5):
+    def update_all_switches(self, max_workers=3):
         """
         Update all switches in parallel
         
@@ -374,7 +374,7 @@ class CiscoSwitchDeployer:
                     logger.info(f"  - {result['name']} ({host}): {result.get('error', 'Unknown error')}")
                     
         # Save results to JSON file
-        results_file = f"update_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        results_file = f"{basePath}/logs/update_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         with open(results_file, 'w') as f:
             json.dump(results, f, indent=2)
         logger.info(f"\nDetailed results saved to {results_file}")
