@@ -10,6 +10,7 @@ import os
 import sys
 import logging
 import json
+import getpass
 from datetime import datetime
 from netmiko import ConnectHandler, NetmikoTimeoutException, NetmikoAuthenticationException
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -29,17 +30,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 basePath = Path.home() / 'pyenv3.13' / 'cisco'
-username = os.getlogin().split('@')[0]
-manager = CredentialManager("secrets.bin")
-credentials = manager.decrypt()
-
-try:
-    password = credentials[username]
-except:
-    password = input(f"Enter the password of user \"{username}\" :")
 
 class CiscoSwitchDeployer:
-    def __init__(self, config_file='switches.yaml'):
+    def __init__(self, config_file, username: str=None, password: str=None):
         """
         Initialize the switch deployer with configuration file
         
@@ -49,6 +42,8 @@ class CiscoSwitchDeployer:
         self.config_file = config_file
         self.switches = []
         self.config_commands = {}
+        self.username = username
+        self.password = password
         self.results = {}
         
     def load_configuration(self):
@@ -86,8 +81,8 @@ class CiscoSwitchDeployer:
             connection_params = {
                 'device_type': device_type,
                 'host': switch_info['host'],
-                'username': username,
-                'password': password,
+                'username': self.username,
+                'password': self.password,
                 'timeout': 60,
                 'session_timeout': 120,
                 'global_delay_factor': 2,
@@ -412,16 +407,29 @@ def main():
     if not os.path.exists(config_file):
         logger.info("Configuration file not exists")
         sys.exit(0)
-        
-    # Initialize updater
-    updater = CiscoSwitchDeployer(config_file)
+    
+    if args.username:
+        username = args.username
+    else:
+        username = os.getlogin().split('@')[0]
+    
+    try:
+        manager = CredentialManager("secrets.bin")
+        credentials = manager.decrypt()
+        password = credentials[username]
+    except:
+        password = getpass.getpass(prompt=f"Enter the password of user \"{username}\" :")
+
+
+    # Initialize deployer
+    deployer = CiscoSwitchDeployer(config_file, username, password)
     
     # Load configuration
-    if not updater.load_configuration():
+    if not deployer.load_configuration():
         logger.error("Failed to load configuration")
         sys.exit(1) 
     # Update switches
-    results = updater.update_all_switches()
+    results = deployer.update_all_switches()
     
     # Exit with appropriate code
     if all(r['success'] for r in results.values()):
