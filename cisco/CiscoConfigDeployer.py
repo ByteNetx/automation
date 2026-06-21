@@ -414,12 +414,14 @@ def main():
         username = os.getlogin().split('@')[0]
     
     try:
-        manager = CredentialManager("secrets.bin")
-        credentials = manager.decrypt()
-        password = credentials[username]
+        if args.password:
+            password = args.password
+        else:
+            manager = CredentialManager("secrets.bin")
+            credentials = manager.decrypt()
+            password = credentials[username]
     except:
         password = getpass.getpass(prompt=f"Enter the password of user \"{username}\" :")
-
 
     # Initialize deployer
     deployer = CiscoSwitchDeployer(config_file, username, password)
