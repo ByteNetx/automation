@@ -613,11 +613,11 @@ def main():
         if output["success"]:
             for obj in output["success"]:
                 value = [",".join(map(str, v)) if isinstance(v, list) else v for k, v in obj.items() if k != 'name' and k != 'type' and k != 'description']
-                logger.info(f"✓{obj.get('type')}_{obj.get('name')}")
+                logger.info(f"✓ {obj.get('type')}_{obj.get('name')}")
                 logger.info(f"Object value: {(' ').join(value)}")
         if output["fail"]:
             for obj in output["fail"]:
-                logger.info(f"✗{obj}")
+                logger.info(f"✗ {obj}")
 
     logger.info("=" * 60)
     logger.info("Operations completed successfully!")
