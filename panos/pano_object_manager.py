@@ -561,6 +561,8 @@ def main():
     # Initialize the manager
     PANORAMA_HOST = args.hostname
     API_KEY = args.apikey
+    USERNAME = args.username
+    PASSWORD = args.passwd
     DEVICE_GROUP = configdata.get('device_group')
     OPERATION = args.operation
     VAULT = "secrets.bin"
@@ -572,15 +574,8 @@ def main():
             api_key=API_KEY,
             device_group=DEVICE_GROUP
         )
-    else:
-        if args.username:
-            USERNAME = args.username
-        else:
-            USERNAME = os.getlogin().split('@')[0]
-    
-        if args.passwd:
-            PASSWORD = args.passwd
-        else:
+    elif USERNAME:
+        if not PASSWORD:
             credentails = get_secret(VAULT, vaultpath)
             PASSWORD = credentails.get(USERNAME)
 
@@ -588,6 +583,14 @@ def main():
             hostname=PANORAMA_HOST,
             username=USERNAME,
             password=PASSWORD,
+            device_group=DEVICE_GROUP
+        )
+    else:
+        credentails = get_secret(VAULT, vaultpath)
+        API_KEY = credentails.get("pano_apikey")
+        manager = PanoramaObjectManager(
+            hostname=PANORAMA_HOST,
+            api_key=API_KEY,
             device_group=DEVICE_GROUP
         )
     
