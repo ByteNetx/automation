@@ -7,6 +7,7 @@ in a Panorama device group.
 import logging
 import sys
 import json
+import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
 from panos.panorama import Panorama, DeviceGroup
@@ -530,13 +531,19 @@ def parse_arguments():
                         help="List objects on Panorama")
     
     # Authentication method (either apikey or username/password)
-    auth = parser.add_mutually_exclusive_group(required=True)
+    auth = parser.add_mutually_exclusive_group(required=False)
     auth.add_argument("--password", "-p", action=Password, nargs='?', dest='passwd',
                         help="Panorama admin password")
     auth.add_argument("--apikey", "-a", type=str,
                         help="Panorama API key")
 
     return parser.parse_args()
+
+def get_secret(vault, vaultpath):
+    from encryption import CredentialManager
+    manager = CredentialManager(vault, vaultpath)
+    credentails = manager.decrypt()
+    return credentails
 
 def main():
     """
@@ -554,10 +561,10 @@ def main():
     # Initialize the manager
     PANORAMA_HOST = args.hostname
     API_KEY = args.apikey
-    USERNAME = args.username
-    PASSWORD = args.passwd
     DEVICE_GROUP = configdata.get('device_group')
     OPERATION = args.operation
+    VAULT = "secrets.bin"
+    vaultpath = Path.home() / 'pyenv3.13' / 'secrets'
 
     if API_KEY:
         manager = PanoramaObjectManager(
@@ -565,16 +572,24 @@ def main():
             api_key=API_KEY,
             device_group=DEVICE_GROUP
         )
-    elif args.username and args.passwd:
+    else:
+        if args.username:
+            USERNAME = args.username
+        else:
+            USERNAME = os.getlogin().split('@')[0]
+    
+        if args.passwd:
+            PASSWORD = args.passwd
+        else:
+            credentails = get_secret(VAULT, vaultpath)
+            PASSWORD = credentails.get(USERNAME)
+
         manager = PanoramaObjectManager(
             hostname=PANORAMA_HOST,
             username=USERNAME,
             password=PASSWORD,
             device_group=DEVICE_GROUP
         )
-    else:
-        logger.info("Error: Either API key or admin username/password must be provided")
-        sys.exit(0)
     
     objects_data = {k: v for k, v in configdata.items() if k != "device_group"}
     if any(OPERATION == op for op in ['create', 'delete']):
