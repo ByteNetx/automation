@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script to manage custom URL categories, address objects, and address groups
-in a Panorama device group.
+Script to manage custom URL categories, address objects, address groups,
+service objects, and service groups in a Panorama.
 """
 
 import logging
@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 
 class PanoramaObjectManager:
     """
-    A class to manage custom URL categories, address objects, and address groups
-    on a Panorama device group.
+    A class to manage custom URL categories, address objects, and address groups, 
+    service objects, and service groups in a Panorama.
     """
 
     def __init__(self, hostname: str, username: str = None, password: str = None,
@@ -42,7 +42,7 @@ class PanoramaObjectManager:
             username: Username for authentication (optional if api_key provided)
             password: Password for authentication (optional if api_key provided)
             api_key: API key for authentication (optional)
-            device_group: Name of the device group to manage
+            device_group: 'Shared' or name of the device group to manage
         """
         self.hostname = hostname
         self.device_group_name = device_group
@@ -53,12 +53,15 @@ class PanoramaObjectManager:
         elif username and password:
             self.panorama = Panorama(hostname, api_username=username, api_password=password)
 
-        # Get the device group
+        # Get the device group and set the scope
         if self.device_group_name != "Shared":
             self.device_group = self._get_device_group()
             if not self.device_group:
                 logger.info(f"Error: '{device_group}' does not exist")
                 sys.exit(0)
+            self.scope = self.device_group
+        else:
+            self.scope = self.panorama
 
     def _get_device_group(self):
         """Find and return a device group object."""
@@ -71,7 +74,7 @@ class PanoramaObjectManager:
 
     def _get_existing_object(self, object_type: type, name: str):
         """
-        Generic method to check if an object already exists in the device group.
+        Generic method to check if an object already exists in Panorama.
 
         Args:
             object_type: The PAN-OS object class (AddressObject, AddressGroup, etc.)
@@ -126,10 +129,7 @@ class PanoramaObjectManager:
                     description=description,
                     type=category_type
                 )
-                if self.device_group_name == "Shared":
-                    self.panorama.add(new_obj)
-                else:
-                    self.device_group.add(new_obj)
+                self.scope.add(new_obj)
                 new_obj.create()
                 logger.info(f"Successfully created URL category '{name}'")
 
@@ -217,10 +217,7 @@ class PanoramaObjectManager:
                     type=value_type,
                     description=description
                 )
-                if self.device_group_name == "Shared":
-                    self.panorama.add(new_obj)
-                else:
-                    self.device_group.add(new_obj)
+                self.scope.add(new_obj)
                 new_obj.create()
                 logger.info(f"Successfully created address object '{name}'")
 
@@ -283,10 +280,7 @@ class PanoramaObjectManager:
                     static_value=member_names,
                     description=description
                 )
-                if self.device_group_name == "Shared":
-                    self.panorama.add(new_obj)
-                else:
-                    self.device_group.add(new_obj)
+                self.scope.add(new_obj)
                 new_obj.create()
                 logger.info(f"Successfully created address group '{name}'")
 
@@ -393,10 +387,7 @@ class PanoramaObjectManager:
                     destination_port=destination_port,
                     description=description
                 )
-                if self.device_group_name == "Shared":
-                    self.panorama.add(new_obj)
-                else:
-                    self.device_group.add(new_obj)
+                self.scope.add(new_obj)
                 new_obj.create()
                 logger.info(f"Successfully created service object '{name}'")
 
@@ -429,7 +420,7 @@ class PanoramaObjectManager:
 
         Args:
             name: Name of the service group
-            member_names: List of service objects
+            member_names: List of service objects included in the group
 
         Returns:
             True if successful, False otherwise
@@ -448,10 +439,7 @@ class PanoramaObjectManager:
                     name=name,
                     value=value
                 )
-                if self.device_group_name == "Shared":
-                    self.panorama.add(new_obj)
-                else:
-                    self.device_group.add(new_obj)
+                self.scope.add(new_obj)
                 new_obj.create()
                 logger.info(f"Successfully created service group '{name}'")
 
@@ -496,6 +484,12 @@ class PanoramaObjectManager:
                     ],
                     "url_categories": [
                         {"name": "Dev-Sites", "url_list": ["*.dev.local"]}
+                    ],
+                    "service_objects": [
+                        {"name": "tcp-3389", "protocol": "tcp", "destination_port": "3389", "description": "created by PAN SDK"}
+                    ],
+                    "service_groups": [
+                        { "name": "grp-serv-test1", "value": ["tcp-3389"]}
                     ]
                 }
 
@@ -615,15 +609,13 @@ class PanoramaObjectManager:
         results = {"success": [], "fail": []}
 
         try:
-            if self.device_group_name == "Shared":
-                scope = self.panorama
-            else:
-                self.device_group.refresh()
-                scope = self.device_group
+            if self.device_group_name != "Shared":
+                self.scope.refresh()
+
             for object_type, object_value in objects_config.items():
                 if object_type == "address_objects":
                     objects = [obj.get('name') for obj in object_value]
-                    addresses = AddressObject.refreshall(scope)
+                    addresses = AddressObject.refreshall(self.scope)
                     all_addr = [addr.name for addr in addresses]
                     for addr in addresses:
                         if addr.name in objects:
@@ -638,7 +630,7 @@ class PanoramaObjectManager:
 
                 if object_type == "url_categories":
                     objects = [obj.get('name') for obj in object_value]
-                    url_cats = CustomUrlCategory.refreshall(scope)
+                    url_cats = CustomUrlCategory.refreshall(self.scope)
                     all_url = [obj.name for obj in url_cats]
                     for url in url_cats:
                         if url.name in objects:
@@ -653,7 +645,7 @@ class PanoramaObjectManager:
     
                 if object_type == "address_groups":
                     objects = [obj.get('name') for obj in object_value]
-                    addr_groups = AddressGroup.refreshall(scope)
+                    addr_groups = AddressGroup.refreshall(self.scope)
                     all_addr_grp = [grp.name for grp in addr_groups]
                     for addr_grp in addr_groups:
                         if addr_grp.name in objects:
@@ -672,7 +664,7 @@ class PanoramaObjectManager:
 
                 if object_type == "service_objects":
                     objects = [obj.get('name') for obj in object_value]
-                    services = ServiceObject.refreshall(scope)
+                    services = ServiceObject.refreshall(self.scope)
                     all_serv = [serv.name for serv in services]
                     for serv in services:
                         if serv.name in objects:
@@ -688,7 +680,7 @@ class PanoramaObjectManager:
 
                 if object_type == "service_groups":
                     objects = [obj.get('name') for obj in object_value]
-                    serv_groups = ServiceGroup.refreshall(scope)
+                    serv_groups = ServiceGroup.refreshall(self.scope)
                     all_serv_grp = [grp.name for grp in serv_groups]
                     for serv_grp in serv_groups:
                         if serv_grp.name in objects:
