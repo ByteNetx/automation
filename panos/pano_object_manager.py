@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script to manage custom URL categories, address objects, address groups,
-service objects, and service groups in a Panorama.
+Script to manage custom URL categories, address objects, and address groups
+in a Panorama device group.
 """
 
 import logging
@@ -16,7 +16,8 @@ from panos.objects import (
     AddressObject,
     AddressGroup,
     ServiceObject,
-    ServiceGroup
+    ServiceGroup,
+    Edl
 )
 
 # Configure logging to see what's happening
@@ -28,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 class PanoramaObjectManager:
     """
-    A class to manage custom URL categories, address objects, and address groups, 
-    service objects, and service groups in a Panorama.
+    A class to manage custom URL categories, address objects, and address groups
+    on a Panorama device group.
     """
 
     def __init__(self, hostname: str, username: str = None, password: str = None,
@@ -42,7 +43,7 @@ class PanoramaObjectManager:
             username: Username for authentication (optional if api_key provided)
             password: Password for authentication (optional if api_key provided)
             api_key: API key for authentication (optional)
-            device_group: 'Shared' or name of the device group to manage
+            device_group: Name of the device group to manage
         """
         self.hostname = hostname
         self.device_group_name = device_group
@@ -53,7 +54,7 @@ class PanoramaObjectManager:
         elif username and password:
             self.panorama = Panorama(hostname, api_username=username, api_password=password)
 
-        # Get the device group and set the scope
+        # Get the device group
         if self.device_group_name != "Shared":
             self.device_group = self._get_device_group()
             if not self.device_group:
@@ -74,7 +75,7 @@ class PanoramaObjectManager:
 
     def _get_existing_object(self, object_type: type, name: str):
         """
-        Generic method to check if an object already exists in Panorama.
+        Generic method to check if an object already exists in the device group.
 
         Args:
             object_type: The PAN-OS object class (AddressObject, AddressGroup, etc.)
@@ -83,11 +84,9 @@ class PanoramaObjectManager:
         Returns:
             Object instance if found, None otherwise
         """
-        if self.device_group_name == "Shared":
-            objects = object_type.refreshall(self.panorama)
-        else:
-            self.device_group.refresh()
-            objects = object_type.refreshall(self.device_group)
+        if self.device_group_name != "Shared":
+            self.scope.refresh()
+        objects = object_type.refreshall(self.scope)
         
         for obj in objects:
             if obj.name == name:
@@ -321,10 +320,7 @@ class PanoramaObjectManager:
                     dynamic_value=filter_criteria,
                     description=description
                 )
-                if self.device_group_name == "Shared":
-                    self.panorama.add(new_obj)
-                else:
-                    self.device_group.add(new_obj)
+                self.scope.add(new_obj)
                 new_obj.create()
                 logger.info(f"Successfully created dynamic address group '{name}'")
 
@@ -420,7 +416,7 @@ class PanoramaObjectManager:
 
         Args:
             name: Name of the service group
-            member_names: List of service objects included in the group
+            member_names: List of service objects
 
         Returns:
             True if successful, False otherwise
@@ -464,6 +460,79 @@ class PanoramaObjectManager:
             logger.error(f"Error deleting service group '{name}': {e}")
             return False
 
+    # ==================== EXTERNAL DYNAMIC LIST METHODS ====================
+
+    def create_or_update_edl(self, name: str, source: str, repeat: str,
+                            edl_type: str, description: str=None, 
+                            certificate_profile: str=None, 
+                            username: str=None, password: str=None) -> bool:
+        """
+        Create a new External Dynamic List or update an existing one.
+
+        Args:
+            name: Name of the External Dynamic List
+            edl_type: must be one of : "ip", "url", or "domain"
+            source: Source of edl
+            repeat: Retrieval interval. Valid values are “five-minute”, “hourly”, “daily”, “weekly”, or “monthly”.
+            description: Optional description (max 255 chars)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            existing = self._get_existing_object(Edl, name)
+
+            if existing:
+                logger.info(f"External Dynamic List '{name}' already exists. Updating...")
+                existing.edl_type = edl_type
+                existing.source = source
+                existing.repeat = repeat
+                if username and password:
+                    existing.username = username
+                    existing.password = password
+                if certificate_profile:
+                    existing.certificate_profile = certificate_profile
+                if description:
+                    existing.description = description
+                existing.apply()
+                logger.info(f"Successfully updated External Dynamic list '{name}'")
+            else:
+                logger.info(f"External Dynamic list '{name}' does not exist. Creating...")
+                new_obj = Edl(
+                    name=name,
+                    edl_type=edl_type,
+                    source=source,
+                    repeat = repeat,
+                    description=description,
+                    username = username,
+                    password = password,
+                    certificate_profile = certificate_profile
+                )
+                self.scope.add(new_obj)
+                new_obj.create()
+                logger.info(f"Successfully created External Dynamic List '{name}'")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error managing External Dynamic List '{name}': {e}")
+            return False
+
+    def delete_edl(self, name: str) -> bool:
+        """Delete an external dynamic list."""
+        try:
+            existing = self._get_existing_object(Edl, name)
+            if existing:
+                existing.delete()
+                logger.info(f"Deleted external dynamic list '{name}'")
+                return True
+            else:
+                logger.warning(f"External dynamic list '{name}' not found")
+                return False
+        except Exception as e:
+            logger.error(f"Error deleting external dynamic list '{name}': {e}")
+            return False
+
     # ==================== BULK OPERATION METHODS ====================
 
     def bulk_operate_objects(self, operation: str, objects_config: Dict[str, Any]) -> Dict[str, bool]:
@@ -484,12 +553,6 @@ class PanoramaObjectManager:
                     ],
                     "url_categories": [
                         {"name": "Dev-Sites", "url_list": ["*.dev.local"]}
-                    ],
-                    "service_objects": [
-                        {"name": "tcp-3389", "protocol": "tcp", "destination_port": "3389", "description": "created by PAN SDK"}
-                    ],
-                    "service_groups": [
-                        { "name": "grp-serv-test1", "value": ["tcp-3389"]}
                     ]
                 }
 
@@ -549,6 +612,15 @@ class PanoramaObjectManager:
                             success = self.create_or_update_service_group(name, **serv_group_params)
                             results[f"service_group_{name}"] = success
 
+                # Create external dynamic list
+                if "edls" in objects_config:
+                    for edl in objects_config["edls"]:
+                        name = edl.get("name")
+                        if name:
+                            edl_params = {k: v for k, v in edl.items() if k != "name"}
+                            success = self.create_or_update_edl(name, **edl_params)
+                            results[f"edl_{name}"] = success
+
             elif operation == 'delete':
                 # Delete address groups
                 if "address_groups" in objects_config:
@@ -589,7 +661,15 @@ class PanoramaObjectManager:
                         if name:
                             success = self.delete_service_object(name)
                             results[f"service_object_{name}"] = success
-    
+
+                # Delete external dynamic list
+                if "edls" in objects_config:
+                    for edl in objects_config["edls"]:
+                        name = edl.get("name")
+                        if name:
+                            success = self.delete_edl(name)
+                            results[f"edl_{name}"] = success
+
             return results
 
         except Exception as e:
@@ -622,6 +702,7 @@ class PanoramaObjectManager:
                             results["success"].append({
                                 "type": "address",
                                 "name": addr.name,
+                                "addr_type": addr.type,
                                 "value": addr.value,
                                 "description": addr.description
                             })
@@ -692,6 +773,21 @@ class PanoramaObjectManager:
                     fail = [f"service_group_{n}" for n in objects if n not in all_serv_grp]
                     results["fail"].extend(fail)
 
+                if object_type == "edls":
+                    objects = [obj.get('name') for obj in object_value]
+                    edls = Edl.refreshall(self.scope)
+                    all_edls = [edl.name for edl in edls]
+                    for edl in edls:
+                        if edl.name in objects:
+                            results["success"].append({
+                                "type": "edl",
+                                "name": edl.name,
+                                "edl_type": edl.edl_type,
+                                "value": edl.source
+                            })
+                    fail = [f"edl_{n}" for n in objects if n not in all_edls]
+                    results["fail"].extend(fail)
+
             return results
 
         except Exception as e:
@@ -722,8 +818,8 @@ def parse_arguments():
     parser.add_argument("--operation", "-o", choices=['create', 'delete', 'list'],
                         default='list', required=True,
                         help="List objects on Panorama")
-    
-    # Authentication method (either apikey or username/password)
+
+    # Authentication arguments (either apikey or username/password)
     auth = parser.add_mutually_exclusive_group(required=False)
     auth.add_argument("--password", "-p", action=Password, nargs='?', dest='passwd',
                         help="Panorama admin password")
