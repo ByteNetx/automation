@@ -850,8 +850,8 @@ def main():
     """
 
     args = parse_arguments()
-    basepath = Path.home() / 'pyenv3.13' / 'panos'
-    filepath = f"{basepath}/config_data/{args.file}"
+    basepath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_object'
+    filepath = f"{basepath}/config/{args.file}"
 
     PANORAMA_HOST = args.hostname
     API_KEY = args.apikey
