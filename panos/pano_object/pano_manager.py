@@ -850,7 +850,7 @@ def main():
     """
 
     args = parse_arguments()
-    basepath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_object'
+    basepath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_project'
     filepath = f"{basepath}/config/{args.file}"
 
     PANORAMA_HOST = args.hostname
@@ -863,7 +863,7 @@ def main():
     objects_data = {}
 
     # Get object data
-    if os.path.exists(filepath):
+    if os.path.isfile(filepath):
         with open(filepath, 'r', encoding='utf-8-sig') as f:
             configdata = json.load(f)
         DEVICE_GROUP = configdata.get('device_group')
