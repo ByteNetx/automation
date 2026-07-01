@@ -1,0 +1,37 @@
+{
+    "url_categories": [
+        {
+            "name": "Social_Media",
+            "description": "Social media platforms",
+            "url_list": ["facebook.com", "twitter.com", "instagram.com", "linkedin.com"]
+        }
+    ],
+    "addresses": [
+        {
+            "name": "web-server-01",
+            "description": "Production web server 01",
+            "ip_netmask": "10.1.1.10/32",
+            "tags": ["web", "production"]
+        },
+        {
+            "name": "web-server-02",
+            "description": "Production web server 02",
+            "ip_netmask": "10.1.1.11/32",
+            "tags": ["web", "production"]
+        },
+        {
+            "name": "db-server-01",
+            "description": "Database server 01",
+            "ip_netmask": "10.2.1.10/32",
+            "tags": ["database", "production"]
+        }
+    ],
+    "address_groups": [
+        {
+            "name": "web-servers",
+            "description": "All production web servers",
+            "static_members": ["web-server-01", "web-server-02"],
+            "tags": ["web", "production"]
+        }
+    ]
+}
