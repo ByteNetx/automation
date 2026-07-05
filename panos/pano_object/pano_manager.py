@@ -29,9 +29,8 @@ logger = logging.getLogger(__name__)
 
 class PanoramaObjectManager:
     """
-    A class to manage custom URL category, address, address group,
-    service, service group, and external dynamic list objects
-    on a Panorama.
+    A class to manage custom URL categories, address objects, and address groups
+    on a Panorama device group.
     """
 
     def __init__(self, hostname: str, username: str = None, password: str = None,
@@ -546,28 +545,15 @@ class PanoramaObjectManager:
                 Example:
                 {
                     "address_objects": [
-                        {"name": "web-server1", "ip_address": "192.168.1.10"},
-                        {"name": "web-server2", "ip_address": "192.168.1.20"}
+                        {"name": "web-server", "ip_address": "192.168.1.10"},
+                        {"name": "db-server", "ip_address": "192.168.1.20"}
                     ],
                     "address_groups": [
-                        {"name": "web-servers", "member_names": ["web-server1", "web-server2"]}
+                        {"name": "web-servers", "member_names": ["web-server", "web-server2"]}
                     ],
                     "url_categories": [
                         {"name": "Dev-Sites", "url_list": ["*.dev.local"]}
-                    ],
-                    "service_objects": [
-                        {"name": "tcp-3389", "protocol": "tcp", "destination_port": "3389"}
-                    ],
-                    "service_groups": [
-                        {"name": "grp-dev-service1", "value": ["tcp-3389"]}
-                    ],
-                    "edls": [
-                        {
-                            "name": "edl-blocklist-ips",
-                            "edl_type": "ip",
-                            "source": "https://example.com/PADBL/edl_blocklist_ips.txt",
-                            "repeat": "hourly"
-                        }
+                    ]
                 }
 
         Returns:
@@ -864,16 +850,16 @@ def main():
     """
 
     args = parse_arguments()
-    basepath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_project'
-    filepath = f"{basepath}/config/{args.file}"
+    basePath = Path.home() / 'pyenv3.9' / 'panos' / 'pano_project'
+    filepath = f"{basePath}/config/{args.file}"
 
     PANORAMA_HOST = args.hostname
     API_KEY = args.apikey
     USERNAME = args.username
     PASSWORD = args.passwd
     OPERATION = args.operation
-    VAULT = "secrets.bin"
-    vaultpath = Path.home() / 'pyenv3.13' / 'secrets'
+    VAULT = "panos_secrets.bin"
+    vaultpath = Path.home() / 'pyenv3.9' / 'secrets'
     objects_data = {}
 
     # Get object data
