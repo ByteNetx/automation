@@ -42,7 +42,7 @@ class ScmAPI:
         self.tsg_id = tsg_id
         
         try:
-            self.scope_type = ScopeType(scope.get("type", "folder"))
+            self.scope_type = ScopeType(scope.get("type", "folder")).value
             self.scope_value = scope.get("value", "All Firewall")
         except:
             logger.info("Error: Invalid scope! Must be 'folder', 'snippet', or 'device'.")
@@ -147,24 +147,54 @@ class ScmAPI:
             for key , values in object_data.items():
                 endpoint = f"/config/network/v1/{key}"
                 for value in values:
+                    name = value['name']
                     params = {
                         scope_type: scope_value,
-                        "name": value,
+                        "name": name,
                         "limit": limit,
                         "offset": offset
                     }
-                
                     
-                    logger.info(f"Fetching {key}: {value} from {scope_type}: {scope_value}")
+                    logger.info(f"Fetching {key}: {name} from {scope_type}: {scope_value}")
                     response = self._make_api_request("GET", endpoint, params=params)
                     
                     # The response might have 'data' key containing the list
-                    results.append(response.get("data", []))
+                    results.extend(response.get("data", []))
     
             return results
     
         except Exception as e:
             logger.error(f"Failed to retrieve network configuration: {e}")
+            return []
+
+    def bulk_config(self, operation: str, config_data: Dict) -> List[Dict]:
+        """
+        Create/update/delete objects in a specific scope.
+        
+        Args:
+            Object_data: Dict of object data
+        
+        Returns:
+            List of configurations
+        """
+        scope_type = self.scope_type
+        scope_value = self.scope_value
+        results = []
+    
+        try:
+            for key , values in config_data.items():
+                endpoint = f"/config/network/v1/{key}"
+                for value in values:
+                    if operation == 'create':
+                        logger.info(f"Create {key}: {value.get('name')} in {scope_type}: {scope_value}")
+                        response = self._make_api_request("POST", endpoint, data=value)
+                    
+                    results.append(response)
+    
+            return results
+    
+        except Exception as e:
+            logger.error(f"Failed to create object: {e}")
             return []
 
 def get_secret(vault, vaultpath):
@@ -182,8 +212,8 @@ def parse_arguments():
     )
     
     # Common arguments
-    parser.add_argument("--username", "-u", type=str,
-                        help="SCM client identifier")
+    #parser.add_argument("--username", "-u", type=str,
+    #                    help="SCM client identifier")
     parser.add_argument("--file", "-f", type=str,
                         help="Object configuration JSON file")
     parser.add_argument("--operation", "-o", choices=['create', 'delete', 'list'], 
@@ -192,30 +222,32 @@ def parse_arguments():
 
     # Search arguments
     group = parser.add_argument_group(title="List configuration in SCM scope")
-    group.add_argument("--scope", "-s", narg=2,
+    group.add_argument("--scope", "-s", nargs=2,
                         help="Scope to search. 'type' 'name'")
-    group.add_argument("--search", narg=2,
+    group.add_argument("--search", nargs=2,
                         help="Object to search. 'endpoint' 'name'")
+
+    return parser.parse_args()
 
 # ==================== Main Execution ====================
 
 def main():
     """
-    Main function run SCM Rest API.
+    Main function run SCM API.
     """
 
     args = parse_arguments()
 
-    basepath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_project'
+    basepath = Path.home() / 'pyenv3.9' / 'panos' / 'scm_project'
     filepath = f"{basepath}/config/{args.file}"
-    vaultpath = Path.home() / 'pyenv3.13' / 'secrets'
+    vaultpath = Path.home() / 'pyenv3.9' / 'secrets'
 
-    VAULT = "secrets.bin"
+    VAULT = "panos_secrets.bin"
     SCOPE = {}
     config_data = {}
-    results = []
 
-    CLIENT_ID = args.username
+    CLIENT_ID = "tyu-API@1533830390.iam.panserviceaccount.com"
+    TSG_ID = "tsg_id:1533830390"
     credentails = get_secret(VAULT, vaultpath)
     CLIENT_SECRET = credentails.get(CLIENT_ID)
     OPERATION = args.operation
@@ -233,14 +265,15 @@ def main():
         sys.exist(0)
 
     if SCOPE:
-        scmapi = ScmAPI(CLIENT_ID, CLIENT_SECRET, SCOPE)
+        scmapi = ScmAPI(CLIENT_ID, CLIENT_SECRET, TSG_ID, SCOPE)
     if config_data:
         if any(OPERATION == op for op in ['list', 'search']):
             # ==================== DISPLAY OBJECTS ====================
-            logger.info(f"Searching objects in device group '{DEVICE_GROUP}':")
-            logger.info("=" * 60)
             output = scmapi.retrieve_config(config_data)
-    print(json.dumps(output, indent=2))
+        elif any(OPERATION == op for op in ['create']):
+            # ==================== CREATE OBJECTS ====================
+            output = scmapi.bulk_config(config_data)
+        print(json.dumps(output, indent=2))
 
 if __name__ == "__main__":
     main()
