@@ -46,15 +46,13 @@ class ApiConfig:
     host: str = "api.strata.paloaltonetworks.com"
     token_url: str = "https://auth.apps.paloaltonetworks.com/oauth2/access_token"
     timeout: int = 30
-    max_retries: int = 3
-    retry_delay: int = 1
 
 class ScopeType(Enum):
     """Configuration scope types in SCM"""
     FOLDER = "folder"
     SNIPPET = "snippet"
     DEVICE = "device"
-    
+
     @classmethod
     def from_string(cls, value: str) -> 'ScopeType':
         """Convert string to ScopeType with validation"""
@@ -83,7 +81,8 @@ class ScmAPI:
         self.client_id = client_id
         self.client_secret = client_secret
         self.tsg_id = tsg_id
-        
+        self.config = ApiConfig()
+
         if isinstance(scope, dict):
             try:
                 scope_type = ScopeType.from_string(scope.get("type"))
@@ -183,9 +182,9 @@ class ScmAPI:
         """Create a single object"""
         try:
             endpoint = f"/config/network/v1/{object_type}"
-            params = self.scope.to_params()
-            logger.info(f"Creating {object_type}-{data.get('name')} in {params.get('type')}-{params.get('value')}")
-            return self._make_api_request("POST", endpoint, data=data, params=params)
+            data.update({self.scope.to_dict().get('type'): self.scope.to_dict().get('value')})
+            logger.info(f"Creating {object_type}-{data.get('name')} in {self.scope.to_dict().get('type')}-{self.scope.to_dict().get('value')}")
+            return self._make_api_request("POST", endpoint, data=data)
 
         except Exception as e:
             logger.error(f"Failed to create network configuration: {e}")
@@ -199,7 +198,7 @@ class ScmAPI:
         params.update({"limit": limit, "offset": offset})
     
         try:
-            logger.info(f"Fetching {object_type}-{name} in {params.get('type')}-{params.get('value')}")
+            logger.info(f"Fetching {object_type}-{name} in {self.scope.to_dict().get('type')}-{self.scope.to_dict().get('value')}")
             response = self._make_api_request("GET", endpoint, params=params)
 
             return response.get("data", [])
@@ -221,23 +220,22 @@ class ScmAPI:
         """
 
         results = []
+        ops = OperationType.from_string(operation)
 
-        for object_type, objects in config_data.items():
-            
-            if not objects:
-                continue
-
-            for obj in objects:
-                name = obj.get('name')
-                
-                if operation == OperationType.LIST:
+        if operation == OperationType.LIST.value:
+            for object_type, objects in config_data.items():
+                for obj in objects:
+                    name = obj.get('name')
                     response = self.list_object(object_type, name)
-                elif operation == OperationType.CREATE:
+                    results.extend(response)
+
+        elif operation == OperationType.CREATE.value:
+            for object_type, objects in config_data.items():
+                for obj in objects:
                     response = self.create_object(object_type, obj)
-                    
-                results.append(response)
+                    results.append(response)
     
-            return results
+        return results
 
 def get_secret(vault, vaultpath):
     from encryption import CredentialManager
