@@ -90,7 +90,7 @@ class ScmAPI:
                 self.scope = ScmScope(scope_type, scope.get("value"))
             except ValueError as e:
                 logger.error(f"Invalid scope: {e}")
-                raise
+                sys.exit(0)
         else:
             logger.info("Error: Scope is not valid!")
             sys.exit(0)
@@ -148,9 +148,9 @@ class ScmAPI:
             return None
     
     def _make_api_request(self, method: str, endpoint: str, data: Optional[Dict] = None,
-                          params: Optional[Dict] = None, retries: int = 3) -> Dict:
+                          params: Optional[Dict] = None) -> Dict:
         """
-        Make an API request to SCM with automatic token handling.
+        Make an API request to SCM.
         """
     
         url = f"https://{self.config.host}{endpoint}"
