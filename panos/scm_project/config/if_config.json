@@ -1,67 +1,67 @@
 [
   {
-    "comment": "Internal Border Vlan3805",
-    "interface_management_profile": "RJ-WAN-Admin",
+    "comment": "Core Vlan1103",
+    "interface_management_profile": "trust-mgmt-profile",
     "ip": [
       {
-        "name": "10.227.240.6/29"
+        "name": "192.168.200.1/29"
       }
     ],
-    "name": "$AE-LAG-BorderFabric.3805",
-    "parent_interface": "$AE-LAG-BorderFabric",
-    "snippet": "CH5-FW-WAN-Ext",
-    "tag": 3805
+    "name": "$AE-LAG-Core.1103",
+    "parent_interface": "$AE-LAG-CORE",
+    "snippet": "DC-FW-Ext",
+    "tag": 1103
   },
   {
-    "comment": "Equinix Internet 1",
+    "comment": "Internet 1",
+    "interface_management_profile": "untrust-mgmt-profile",
+    "ip": [
+      {
+        "name": "192.168.101.1/30"
+      }
+    ],
+    "name": "$AE-LAG-Core.1101",
+    "parent_interface": "$AE-LAG-BorderFabric",
+    "snippet": "DC-FW-Ext",
+    "tag": 1101
+  },
+  {
+    "comment": "Internet 2",
+    "interface_management_profile": "untrust-mgmt-profile",
+    "ip": [
+      {
+        "name": "192.168.102.1/30"
+      }
+    ],
+    "name": "$AE-LAG-BorderFabric.1102",
+    "parent_interface": "$AE-LAG-BorderFabric",
+    "snippet": "DC-FW-Ext",
+    "tag": 1102
+  },
+  {
+    "comment": "Transit for User Firewall",
+    "interface_management_profile": "untrust-mgmt-profile",
+    "ip": [
+      {
+        "name": "192.168.200.9/29"
+      }
+    ],
+    "name": "$AE-LAG-Core.1510",
+    "parent_interface": "$AE-LAG-Core",
+    "snippet": "DC-FW-Ext",
+    "tag": 1510
+  },
+  {
+    "comment": "Transit for MGMT Firewall",
     "interface_management_profile": "RJ-WAN-Ping-Only",
     "ip": [
       {
-        "name": "147.123.219.226/30"
+        "name": "192.168.200.17/29"
       }
     ],
-    "name": "$AE-LAG-BorderFabric.3801",
-    "parent_interface": "$AE-LAG-BorderFabric",
-    "snippet": "CH5-FW-WAN-Ext",
-    "tag": 3801
-  },
-  {
-    "comment": "Equinix Internet 2",
-    "interface_management_profile": "RJ-WAN-Ping-Only",
-    "ip": [
-      {
-        "name": "147.123.219.230/30"
-      }
-    ],
-    "name": "$AE-LAG-BorderFabric.3802",
-    "parent_interface": "$AE-LAG-BorderFabric",
-    "snippet": "CH5-FW-WAN-Ext",
-    "tag": 3802
-  },
-  {
-    "comment": "Internet Transit for User Firewall",
-    "interface_management_profile": "RJ-WAN-Ping-Only",
-    "ip": [
-      {
-        "name": "170.12.237.1/27"
-      }
-    ],
-    "name": "$AE-LAG-BorderFabric.3806",
-    "parent_interface": "$AE-LAG-BorderFabric",
-    "snippet": "CH5-FW-WAN-Ext",
-    "tag": 3806
-  },
-  {
-    "comment": "INET-Transit for MGMT Firewall",
-    "interface_management_profile": "RJ-WAN-Ping-Only",
-    "ip": [
-      {
-        "name": "10.237.253.33/27"
-      }
-    ],
-    "name": "$AE-LAG-BorderFabric.1542",
-    "parent_interface": "$AE-LAG-BorderFabric",
-    "snippet": "CH5-FW-WAN-Ext",
-    "tag": 1542
+    "name": "$AE-LAG-Core.1511",
+    "parent_interface": "$AE-LAG-Core",
+    "snippet": "DC-FW-Ext",
+    "tag": 1511
   }
 ]
