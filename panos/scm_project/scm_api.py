@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-PAN Strata Cloud manager (SCM)
+Palo Alto Networks Strata Cloud manager (SCM)
 This script configures interfaces, logical router, 
-and BGP routing on PA NGFW managed by SCM
+and BGP routing on PA NGFW managed by SCM.
 """
 
 import time
