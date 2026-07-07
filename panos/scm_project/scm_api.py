@@ -286,8 +286,8 @@ def main():
     SCOPE = {}
     config_data = {}
 
-    CLIENT_ID = "tyu-API@1533830390.iam.panserviceaccount.com"
-    TSG_ID = "tsg_id:1533830390"
+    CLIENT_ID = "xxxxxx.iam.panserviceaccount.com"
+    TSG_ID = "tsg_id:xxxxxx"
     credentails = get_secret(VAULT, vaultpath)
     CLIENT_SECRET = credentails.get(CLIENT_ID)
     OPERATION = args.operation
