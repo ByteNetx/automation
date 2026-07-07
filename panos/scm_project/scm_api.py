@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PAN Strata Cloud manager (SCM)
-This script configures ethernet interfaces, logical router, 
+This script configures interfaces, logical router, 
 and BGP routing on PA NGFW managed by SCM
 """
 
@@ -14,7 +14,7 @@ import json
 import os
 from enum import Enum
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from dataclasses import dataclass, asdict
 import logging
 
@@ -25,27 +25,74 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+class OperationType(Enum):
+    """Supported operation types"""
+    CREATE = "create"
+    DELETE = "delete"
+    LIST = "list"
+    UPDATE = "update"
+    
+    @classmethod
+    def from_string(cls, value: str) -> 'OperationType':
+        try:
+            return cls(value.lower())
+        except ValueError:
+            raise ValueError(f"Invalid operation: {value}. Must be 'create', 'delete', 'list', or 'update'")
+
+@dataclass
+class ApiConfig:
+    """API configuration settings"""
+    host: str = "api.strata.paloaltonetworks.com"
+    token_url: str = "https://auth.apps.paloaltonetworks.com/oauth2/access_token"
+    timeout: int = 30
+    max_retries: int = 3
+    retry_delay: int = 1
+
 class ScopeType(Enum):
     """Configuration scope types in SCM"""
     FOLDER = "folder"
     SNIPPET = "snippet"
     DEVICE = "device"
+    
+    @classmethod
+    def from_string(cls, value: str) -> 'ScopeType':
+        """Convert string to ScopeType with validation"""
+        try:
+            return cls(value.lower())
+        except ValueError:
+            raise ValueError(f"Invalid scope type: {value}. Must be 'folder', 'snippet', or 'device'")
+
+@dataclass
+class ScmScope:
+    """SCM configuration scope"""
+    type: ScopeType
+    value: str
+    
+    def to_dict(self) -> Dict[str, str]:
+        return {"type": self.type.value, "value": self.value}
+    
+    def to_params(self) -> Dict[str, str]:
+        return {self.type.value: self.value}
 
 class ScmAPI:
 
     def __init__(self, client_id: str, client_secret: str, tsg_id: str,
-                 scope: Dict, **kwargs):
+                 scope: Union[Dict, ScmScope], config: Optional[ApiConfig] = None):
 
-        self.host = "api.strata.paloaltonetworks.com"
         self.client_id = client_id
         self.client_secret = client_secret
         self.tsg_id = tsg_id
         
-        try:
-            self.scope_type = ScopeType(scope.get("type", "folder")).value
-            self.scope_value = scope.get("value", "All Firewall")
-        except:
-            logger.info("Error: Invalid scope! Must be 'folder', 'snippet', or 'device'.")
+        if isinstance(scope, dict):
+            try:
+                scope_type = ScopeType.from_string(scope.get("type"))
+                self.scope = ScmScope(scope_type, scope.get("value"))
+            except ValueError as e:
+                logger.error(f"Invalid scope: {e}")
+                raise
+        else:
+            logger.info("Error: Scope is not valid!")
             sys.exit(0)
 
         self.token_cache = {
@@ -53,11 +100,18 @@ class ScmAPI:
             "expires_at": 0
         }
 
-        self.token = self.get_token()
+        # Session for connection pooling
+        self._session = requests.Session()
+        self._session.headers.update({
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        })
+        
+        logger.info(f"SCM API initialized with scope: {self.scope.type.value}={self.scope.value}")
 
     def get_token(self) -> Optional[str]:
-        """Generate an access token for SCM."""
-        TOKEN_URL = "https://auth.apps.paloaltonetworks.com/oauth2/access_token"
+        """Generate or retrieve cached access token for SCM"""
+
         if self.token_cache["access_token"] and time.time() < self.token_cache["expires_at"] - 60:
             return self.token_cache["access_token"]
         
@@ -68,7 +122,7 @@ class ScmAPI:
     
         try:
             response = requests.post(
-                TOKEN_URL,
+                self.config.token_url,
                 headers=headers,
                 data={
                     "grant_type": "client_credentials",
@@ -93,32 +147,31 @@ class ScmAPI:
                 logger.error(f"Status: {e.response.status_code}, Body: {e.response.text}")
             return None
     
-    def _make_api_request(self, method: str, endpoint: str, data: Dict = None, params: Dict = None) -> Dict:
+    def _make_api_request(self, method: str, endpoint: str, data: Optional[Dict] = None,
+                          params: Optional[Dict] = None, retries: int = 3) -> Dict:
         """
         Make an API request to SCM with automatic token handling.
         """
-        token = self.token
-        
-        url = f"https://{self.host}{endpoint}"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        
+    
+        url = f"https://{self.config.host}{endpoint}"
+
         try:
-            logger.debug(f"Making {method} request to {endpoint}")
-            response = requests.request(
+            token = self.get_token()
+            headers = {
+                "Authorization": f"Bearer {token}"
+            }
+            response = self._session.request(
                 method=method,
                 url=url,
                 headers=headers,
                 json=data,
                 params=params,
-                timeout=60
+                timeout=self.config.timeout
             )
+
             response.raise_for_status()
             return response.json() if response.content else {}
-        
+    
         except requests.RequestException as e:
             logger.error(f"API request failed: {e}")
             if hasattr(e, 'response') and e.response is not None:
@@ -126,76 +179,65 @@ class ScmAPI:
                 logger.error(f"Response: {e.response.text}")
             raise
 
-    
-    def retrieve_config(self, object_data: Dict, limit: int = 200, offset: int = 0) -> List[Dict]:
-        """
-        Retreive objects in a specific scope.
-        
-        Args:
-            Object_data: Dict of object data
-            limit: Maximum number of results per page
-            offset: Pagination offset
-        
-        Returns:
-            List of configurations
-        """
-        scope_type = self.scope_type
-        scope_value = self.scope_value
-        results = []
+    def create_object(self, object_type: str, data: Dict) -> Dict:
+        """Create a single object"""
+        try:
+            endpoint = f"/config/network/v1/{object_type}"
+            params = self.scope.to_params()
+            logger.info(f"Creating {object_type}-{data.get('name')} in {params.get('type')}-{params.get('value')}")
+            return self._make_api_request("POST", endpoint, data=data, params=params)
+
+        except Exception as e:
+            logger.error(f"Failed to create network configuration: {e}")
+            return []
+
+    def list_object(self, object_type: str, name = str, limit: int = 200, offset: int = 0) -> List[Dict]:
+        """Retrieve a single object"""
+        endpoint = f"/config/network/v1/{object_type}"
+        params = self.scope.to_params()
+        params.update({"name": name})
+        params.update({"limit": limit, "offset": offset})
     
         try:
-            for key , values in object_data.items():
-                endpoint = f"/config/network/v1/{key}"
-                for value in values:
-                    name = value['name']
-                    params = {
-                        scope_type: scope_value,
-                        "name": name,
-                        "limit": limit,
-                        "offset": offset
-                    }
-                    
-                    logger.info(f"Fetching {key}: {name} from {scope_type}: {scope_value}")
-                    response = self._make_api_request("GET", endpoint, params=params)
-                    
-                    # The response might have 'data' key containing the list
-                    results.extend(response.get("data", []))
-    
-            return results
-    
+            logger.info(f"Fetching {object_type}-{name} in {params.get('type')}-{params.get('value')}")
+            response = self._make_api_request("GET", endpoint, params=params)
+
+            return response.get("data", [])
+
         except Exception as e:
             logger.error(f"Failed to retrieve network configuration: {e}")
             return []
 
-    def bulk_config(self, operation: str, config_data: Dict) -> List[Dict]:
+    def bulk_operation(self, operation: OperationType, config_data: Dict) -> List[Dict]:
         """
-        Create/update/delete objects in a specific scope.
+        Create/update/delete/list objects in a specific scope.
         
         Args:
+            operation: Operation method for objects in a scope
             Object_data: Dict of object data
         
         Returns:
             List of configurations
         """
-        scope_type = self.scope_type
-        scope_value = self.scope_value
+
         results = []
-    
-        try:
-            for key , values in config_data.items():
-                endpoint = f"/config/network/v1/{key}"
-                for value in values:
-                    if operation == 'create':
-                        logger.info(f"Create {key}: {value.get('name')} in {scope_type}: {scope_value}")
-                        response = self._make_api_request("POST", endpoint, data=value)
+
+        for object_type, objects in config_data.items():
+            
+            if not objects:
+                continue
+
+            for obj in objects:
+                name = obj.get('name')
+                
+                if operation == OperationType.LIST:
+                    response = self.list_object(object_type, name)
+                elif operation == OperationType.CREATE:
+                    response = self.create_object(object_type, obj)
                     
-                    results.append(response)
+                results.append(response)
     
             return results
-    
-        except Exception as e:
-            logger.error(f"Failed to create object: {e}")
-            return []
 
 def get_secret(vault, vaultpath):
     from encryption import CredentialManager
@@ -263,16 +305,11 @@ def main():
     else:
         logger.info("Error: Scope and endpoint must be provided!")
         sys.exist(0)
-
-    if SCOPE:
-        scmapi = ScmAPI(CLIENT_ID, CLIENT_SECRET, TSG_ID, SCOPE)
+    
+    scm_client = ScmAPI(CLIENT_ID, CLIENT_SECRET, TSG_ID, SCOPE)
     if config_data:
-        if any(OPERATION == op for op in ['list', 'search']):
-            # ==================== DISPLAY OBJECTS ====================
-            output = scmapi.retrieve_config(config_data)
-        elif any(OPERATION == op for op in ['create']):
-            # ==================== CREATE OBJECTS ====================
-            output = scmapi.bulk_config(config_data)
+        output = scm_client.bulk_operation(OPERATION, config_data)
+        
         print(json.dumps(output, indent=2))
 
 if __name__ == "__main__":
