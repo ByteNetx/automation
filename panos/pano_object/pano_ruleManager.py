@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class OperationType(Enum):
-    """Supported operation types"""
+    """Supported operation modes"""
     CREATE = "create"
     DELETE = "delete"
     LIST = "list"
@@ -233,9 +233,10 @@ class PanoramaRuleManager:
         else:
             return False
 
+    # ==================== RULE OPERATION METHODS ====================
     def rule_operation(self, operation: str, cfg_data: Dict[str, Any]) -> Dict[str, bool]:
         """
-        Deletes a rule from the rulebase.
+        Operation for multiple objects in cfg_data dictionary.
 
         Args:
             operation (str): Operation mode is create, delete, move, or list.
