@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Script to manage custom URL categories, address objects, and address groups
-in a Panorama device group.
+Script to manage custom URL categories, address objects, address groups,
+service objects, service groups, and EDLs in Panorama device groups
+using the pan-os-python SDK.
 """
 
 import logging
@@ -10,6 +11,7 @@ import json
 import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
+from enum import Enum
 from panos.panorama import Panorama, DeviceGroup
 from panos.objects import (
     CustomUrlCategory,
@@ -20,21 +22,51 @@ from panos.objects import (
     Edl
 )
 
-# Configure logging to see what's happening
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
+class OperationType(Enum):
+    """Supported operation modes"""
+    CREATE = "create"
+    DELETE = "delete"
+    LIST = "list"
+
+    @classmethod
+    def from_string(cls, value: str) -> 'OperationType':
+        try:
+            return cls(value.lower())
+        except ValueError:
+            raise ValueError(f"Invalid operation: {value}. Must be 'create', 'delete', or 'list'")
+
+class ObjectType(Enum):
+    """Object type"""
+    ADDRESS = "AddressObject"
+    ADDRESS_GROUP = "AddressGroup"
+    SERVICE = "ServiceObject"
+    SERVICE_GROUP = "ServiceGroup"
+    URL_CATEGORY = "CustomUrlCategory"
+    EDL = "Edl"
+
+    @classmethod
+    def from_string(cls, value: str) -> 'ObjectType':
+        try:
+            return cls(value)
+        except ValueError:
+            raise ValueError(f"Invalid object type: {value}.")
+
+
 class PanoramaObjectManager:
     """
-    A class to manage custom URL categories, address objects, and address groups
-    on a Panorama device group.
+    A class to manage custom URL categories, address objects, address groups,
+    service objects, service groups, and EDLs in Panorama device groups.
     """
 
     def __init__(self, hostname: str, username: str = None, password: str = None,
-                 api_key: str = None, device_group: str = "Shared", **kwargs):
+                 api_key: str = None, **kwargs):
         """
         Initialize the Panorama connection.
 
@@ -43,10 +75,8 @@ class PanoramaObjectManager:
             username: Username for authentication (optional if api_key provided)
             password: Password for authentication (optional if api_key provided)
             api_key: API key for authentication (optional)
-            device_group: Name of the device group to manage
         """
         self.hostname = hostname
-        self.device_group_name = device_group
         self.scope = None
 
         if api_key:
@@ -54,38 +84,27 @@ class PanoramaObjectManager:
         elif username and password:
             self.panorama = Panorama(hostname, api_username=username, api_password=password)
 
-        # Get the device group
-        if self.device_group_name != "Shared":
-            self.device_group = self._get_device_group()
-            if not self.device_group:
-                logger.info(f"Error: '{device_group}' does not exist")
-                sys.exit(0)
-            self.scope = self.device_group
-        else:
-            self.scope = self.panorama
 
-    def _get_device_group(self):
+    def _get_device_group(self, device_group_name):
         """Find and return a device group object."""
         device_groups = DeviceGroup.refreshall(self.panorama)
 
         for dg in device_groups:
-            if dg.name == self.device_group_name:
+            if dg.name == device_group_name:
                 return dg
         return None
 
     def _get_existing_object(self, object_type: type, name: str):
         """
-        Generic method to check if an object already exists in the device group.
+        Helper to check if an object already exists in the device group.
 
         Args:
             object_type: The PAN-OS object class (AddressObject, AddressGroup, etc.)
-            name: Name of the object to find
+            name: Name of the object to search
 
         Returns:
             Object instance if found, None otherwise
         """
-        if self.device_group_name != "Shared":
-            self.scope.refresh()
         objects = object_type.refreshall(self.scope)
         
         for obj in objects:
@@ -533,28 +552,15 @@ class PanoramaObjectManager:
             logger.error(f"Error deleting external dynamic list '{name}': {e}")
             return False
 
-    # ==================== BULK OPERATION METHODS ====================
+    # ==================== OBJECT OPERATION METHODS ====================
 
-    def bulk_operate_objects(self, operation: str, objects_config: Dict[str, Any]) -> Dict[str, bool]:
+    def object_operation(self, operation: str, cfg_data: Dict[str, Any]) -> Dict[str, bool]:
         """
-        Create multiple objects in bulk.
+        Operation for multiple objects in the object_config dictionary.
 
         Args:
-            operation: Operation mode is either 'create' or 'delete'
+            operation: Operation mode is 'create', 'delete' or 'list'.
             objects_config: Dictionary containing configuration for multiple objects
-                Example:
-                {
-                    "address_objects": [
-                        {"name": "web-server", "ip_address": "192.168.1.10"},
-                        {"name": "db-server", "ip_address": "192.168.1.20"}
-                    ],
-                    "address_groups": [
-                        {"name": "web-servers", "member_names": ["web-server", "web-server2"]}
-                    ],
-                    "url_categories": [
-                        {"name": "Dev-Sites", "url_list": ["*.dev.local"]}
-                    ]
-                }
 
         Returns:
             Dictionary with object names and success status
@@ -562,237 +568,264 @@ class PanoramaObjectManager:
         results = {}
 
         try:
-            if operation == 'create':
-                # Create address objects
-                if "address_objects" in objects_config:
-                    for addr_obj in objects_config["address_objects"]:
-                        name = addr_obj.get("name")
-                        if name:
-                            # Extract the address type
-                            addr_params = {k: v for k, v in addr_obj.items() if k != "name"}
-                            success = self.create_or_update_address_object(name, **addr_params)
-                            results[f"address_object_{name}"] = success
+            for device_group_name, object_data in cfg_data.items():
+                # Get the device group
+                if device_group_name != "Shared":
+                    device_group = self._get_device_group(device_group_name)
+                    if not device_group:
+                        logger.error(f"Error: '{device_group_name}' does not exist")
+                        return results
+                    self.scope = device_group
+                else:
+                    self.scope = self.panorama
+
+                if operation == OperationType.from_string('create').value and object_data:
+                    # Create address objects
+                    if "address_objects" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Creating/updating address objects in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for addr_obj in object_data["address_objects"]:
+                            name = addr_obj.get("name")
+                            if name:
+                                addr_params = {k: v for k, v in addr_obj.items() if k != "name"}
+                                success = self.create_or_update_address_object(name, **addr_params)
+                                results[f"address_object_{name}"] = success
+
+                    # Create URL categories
+                    if "url_categories" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Creating/updating custom urls in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for url_cat in object_data["url_categories"]:
+                            name = url_cat.get("name")
+                            if name:
+                                url_params = {k: v for k, v in url_cat.items() if k != "name"}
+                                success = self.create_or_update_url_category(name, **url_params)
+                                results[f"url_category_{name}"] = success
+        
+                    # Create address groups
+                    if "address_groups" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Creating/updating address groups in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for addr_group in object_data["address_groups"]:
+                            name = addr_group.get("name")
+                            if name:
+                                addr_group_params = {k: v for k, v in addr_group.items() if k != "name"}
+                                if "filter_criteria" in addr_group_params:
+                                    success = self.create_or_update_dynamic_address_group(name, **addr_group_params)
+                                else:
+                                    success = self.create_or_update_static_address_group(name, **addr_group_params)
+                                results[f"address_group_{name}"] = success
+                    
+                    # Create service objects
+                    if "service_objects"in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Creating/updating service objects in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for serv_obj in object_data["service_objects"]:
+                            name = serv_obj.get("name")
+                            if name:
+                                serv_params = {k: v for k, v in serv_obj.items() if k != "name"}
+                                success = self.create_or_update_service_object(name, **serv_params)
+                                results[f"service_object_{name}"] = success
     
-                # Create URL categories
-                if "url_categories" in objects_config:
-                    for url_cat in objects_config["url_categories"]:
-                        name = url_cat.get("name")
-                        if name:
-                            url_params = {k: v for k, v in url_cat.items() if k != "name"}
-                            success = self.create_or_update_url_category(name, **url_params)
-                            results[f"url_category_{name}"] = success
+                    # Create service groups
+                    if "service_groups" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Creating/updating service groups in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for serv_group in object_data["service_groups"]:
+                            name = serv_group.get("name")
+                            if name:
+                                serv_group_params = {k: v for k, v in serv_group.items() if k != "name"}
+                                success = self.create_or_update_service_group(name, **serv_group_params)
+                                results[f"service_group_{name}"] = success
     
-                # Create address groups
-                if "address_groups" in objects_config:
-                    for addr_group in objects_config["address_groups"]:
-                        name = addr_group.get("name")
-                        if name:
-                            addr_group_params = {k: v for k, v in addr_group.items() if k != "name"}
-                            if "filter_criteria" in addr_group_params:
-                                success = self.create_or_update_dynamic_address_group(name, **addr_group_params)
-                            else:
-                                success = self.create_or_update_static_address_group(name, **addr_group_params)
-                            results[f"address_group_{name}"] = success
-                
-                # Create service objects
-                if "service_objects"in objects_config:
-                    for serv_obj in objects_config["service_objects"]:
-                        name = serv_obj.get("name")
-                        if name:
-                            serv_params = {k: v for k, v in serv_obj.items() if k != "name"}
-                            success = self.create_or_update_service_object(name, **serv_params)
-                            results[f"service_object_{name}"] = success
-
-                # Create service groups
-                if "service_groups" in objects_config:
-                    for serv_group in objects_config["service_groups"]:
-                        name = serv_group.get("name")
-                        if name:
-                            serv_group_params = {k: v for k, v in serv_group.items() if k != "name"}
-                            success = self.create_or_update_service_group(name, **serv_group_params)
-                            results[f"service_group_{name}"] = success
-
-                # Create external dynamic list
-                if "edls" in objects_config:
-                    for edl in objects_config["edls"]:
-                        name = edl.get("name")
-                        if name:
-                            edl_params = {k: v for k, v in edl.items() if k != "name"}
-                            success = self.create_or_update_edl(name, **edl_params)
-                            results[f"edl_{name}"] = success
-
-            elif operation == 'delete':
-                # Delete address groups
-                if "address_groups" in objects_config:
-                    for addr_group in objects_config["address_groups"]:
-                        name = addr_group.get("name")
-                        if name:
-                            success = self.delete_address_group(name)
-                            results[f"address_group_{name}"] = success
-
-                # Delete address objects
-                if "address_objects" in objects_config:
-                    for addr_obj in objects_config["address_objects"]:
-                        name = addr_obj.get("name")
-                        if name:
-                            success = self.delete_address_object(name)
-                            results[f"address_object_{name}"] = success
+                    # Create external dynamic list
+                    if "edls" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Creating/updating edls in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for edl in object_data["edls"]:
+                            name = edl.get("name")
+                            if name:
+                                edl_params = {k: v for k, v in edl.items() if k != "name"}
+                                success = self.create_or_update_edl(name, **edl_params)
+                                results[f"edl_{name}"] = success
     
-                # Delete URL categories
-                if "url_categories" in objects_config:
-                    for url_cat in objects_config["url_categories"]:
-                        name = url_cat.get("name")
-                        if name:
-                            success = self.delete_url_category(name)
-                            results[f"url_category_{name}"] = success
+                elif operation == OperationType.from_string('delete').value and object_data:
+                    # Delete address groups
+                    if "address_groups" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Deleting address groups in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for addr_group in object_data["address_groups"]:
+                            name = addr_group.get("name")
+                            if name:
+                                success = self.delete_address_group(name)
+                                results[f"address_group_{name}"] = success
+    
+                    # Delete address objects
+                    if "address_objects" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Deleting address objects in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for addr_obj in object_data["address_objects"]:
+                            name = addr_obj.get("name")
+                            if name:
+                                success = self.delete_address_object(name)
+                                results[f"address_object_{name}"] = success
+        
+                    # Delete URL categories
+                    if "url_categories" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Deleting custom urls in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for url_cat in object_data["url_categories"]:
+                            name = url_cat.get("name")
+                            if name:
+                                success = self.delete_url_category(name)
+                                results[f"url_category_{name}"] = success
+    
+                    # Delete service groups
+                    if "service_groups" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Deleting service groups in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for serv_group in object_data["service_groups"]:
+                            name = serv_group.get("name")
+                            if name:
+                                success = self.delete_service_group(name)
+                                results[f"service_group_{name}"] = success
+    
+                    # Delete service objects
+                    if "service_objects" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Deleting service objects in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for serv_obj in object_data["service_objects"]:
+                            name = serv_obj.get("name")
+                            if name:
+                                success = self.delete_service_object(name)
+                                results[f"service_object_{name}"] = success
+    
+                    # Delete external dynamic list
+                    if "edls" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Deleting edls in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for edl in object_data["edls"]:
+                            name = edl.get("name")
+                            if name:
+                                success = self.delete_edl(name)
+                                results[f"edl_{name}"] = success
 
-                # Delete service groups
-                if "service_groups" in objects_config:
-                    for serv_group in objects_config["service_groups"]:
-                        name = serv_group.get("name")
-                        if name:
-                            success = self.delete_service_group(name)
-                            results[f"service_group_{name}"] = success
-
-                # Delete service objects
-                if "service_objects" in objects_config:
-                    for serv_obj in objects_config["service_objects"]:
-                        name = serv_obj.get("name")
-                        if name:
-                            success = self.delete_service_object(name)
-                            results[f"service_object_{name}"] = success
-
-                # Delete external dynamic list
-                if "edls" in objects_config:
-                    for edl in objects_config["edls"]:
-                        name = edl.get("name")
-                        if name:
-                            success = self.delete_edl(name)
-                            results[f"edl_{name}"] = success
-
-            return results
+                elif operation == OperationType.from_string('list').value and object_data:
+                    # Search address groups
+                    if "address_groups" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Searching address groups in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for addr_group in object_data["address_groups"]:
+                            name = addr_group.get("name")
+                            if name:
+                                existing = self._get_existing_object(AddressGroup, name)
+                                if existing:
+                                    success = True
+                                    logger.info(existing.about())
+                                else:
+                                    success = False
+                                results[f"address_group_{name}"] = success
+    
+                    # Search address objects
+                    if "address_objects" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Searching address objects in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for addr_obj in object_data["address_objects"]:
+                            name = addr_obj.get("name")
+                            if name:
+                                existing = self._get_existing_object(AddressObject, name)
+                                if existing:
+                                    success = True
+                                    logger.info(existing.about())
+                                else:
+                                    success = False
+                                results[f"address_object_{name}"] = success
+                                
+        
+                    # Search URL categories
+                    if "url_categories" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Searching custom urls in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for url_cat in object_data["url_categories"]:
+                            name = url_cat.get("name")
+                            if name:
+                                existing = self._get_existing_object(CustomUrlCategory, name)
+                                if existing:
+                                    success = True
+                                    logger.info(existing.about())
+                                else:
+                                    success = False
+                                results[f"url_category_{name}"] = success
+    
+                    # Search service groups
+                    if "service_groups" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Searching service groups in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for serv_group in object_data["service_groups"]:
+                            name = serv_group.get("name")
+                            if name:
+                                existing = self._get_existing_object(ServiceGroup, name)
+                                if existing:
+                                    success = True
+                                    logger.info(existing.about())
+                                else:
+                                    success = False
+                                results[f"service_group_{name}"] = success
+    
+                    # Search service objects
+                    if "service_objects" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Searching service objects in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for serv_obj in object_data["service_objects"]:
+                            name = serv_obj.get("name")
+                            if name:
+                                existing = self._get_existing_object(ServiceObject, name)
+                                if existing:
+                                    success = True
+                                    logger.info(existing.about())
+                                else:
+                                    success = False
+                                results[f"service_object_{name}"] = success
+    
+                    # Search external dynamic list
+                    if "edls" in object_data:
+                        logger.info("=" * 60)
+                        logger.info(f"Searching edls in '{device_group_name}'")
+                        logger.info("=" * 60)
+                        for edl in object_data["edls"]:
+                            name = edl.get("name")
+                            if name:
+                                existing = self._get_existing_object(Edl, name)
+                                if existing:
+                                    success = True
+                                    logger.info(existing.about())
+                                else:
+                                    success = False
+                                results[f"edl_{name}"] = success
+    
+                return results
 
         except Exception as e:
-            logger.error(f"Error in bulk operation: {e}")
+            logger.error(f"Error in object operation: {e}")
             return results
 
-    def list_objects(self, objects_config) -> Dict[str, List]:
-        """
-        List objects in the device group.
-
-        Args:
-            object_type: Type of objects to list ("address", "url", "group", "all")
-
-        Returns:
-            List of dictionaries containing object information
-        """
-        results = {"success": [], "fail": []}
-
-        try:
-            if self.device_group_name != "Shared":
-                self.scope.refresh()
-
-            for object_type, object_value in objects_config.items():
-                if object_type == "address_objects":
-                    objects = [obj.get('name') for obj in object_value]
-                    addresses = AddressObject.refreshall(self.scope)
-                    all_addr = [addr.name for addr in addresses]
-                    for addr in addresses:
-                        if addr.name in objects:
-                            results["success"].append({
-                                "type": "address",
-                                "name": addr.name,
-                                "addr_type": addr.type,
-                                "value": addr.value,
-                                "description": addr.description
-                            })
-                    fail = [f"address_{n}" for n in objects if n not in all_addr]
-                    results["fail"].extend(fail)
-
-                if object_type == "url_categories":
-                    objects = [obj.get('name') for obj in object_value]
-                    url_cats = CustomUrlCategory.refreshall(self.scope)
-                    all_url = [obj.name for obj in url_cats]
-                    for url in url_cats:
-                        if url.name in objects:
-                            results["success"].append({
-                                "type": "url_category",
-                                "name": url.name,
-                                "list": url.url_value,
-                                "description": url.description
-                            })
-                    fail = [f"url_category_{n}" for n in objects if n not in all_url]
-                    results["fail"].extend(fail)
-    
-                if object_type == "address_groups":
-                    objects = [obj.get('name') for obj in object_value]
-                    addr_groups = AddressGroup.refreshall(self.scope)
-                    all_addr_grp = [grp.name for grp in addr_groups]
-                    for addr_grp in addr_groups:
-                        if addr_grp.name in objects:
-                            if addr_grp.static_value:
-                                members = addr_grp.static_value
-                            elif addr_grp.dynamic_value:
-                                members = addr_grp.dynamic_value
-                            results["success"].append({
-                                "type": "address_group",
-                                "name": addr_grp.name,
-                                "members": members,
-                                "description": addr_grp.description
-                            })
-                    fail = [f"address_group_{n}" for n in objects if n not in all_addr_grp]
-                    results["fail"].extend(fail)
-
-                if object_type == "service_objects":
-                    objects = [obj.get('name') for obj in object_value]
-                    services = ServiceObject.refreshall(self.scope)
-                    all_serv = [serv.name for serv in services]
-                    for serv in services:
-                        if serv.name in objects:
-                            results["success"].append({
-                                "type": "service",
-                                "name": serv.name,
-                                "protocol": serv.protocol,
-                                "destination_port": serv.destination_port,
-                                "description": serv.description
-                            })
-                    fail = [f"service_{n}" for n in objects if n not in all_serv]
-                    results["fail"].extend(fail)
-
-                if object_type == "service_groups":
-                    objects = [obj.get('name') for obj in object_value]
-                    serv_groups = ServiceGroup.refreshall(self.scope)
-                    all_serv_grp = [grp.name for grp in serv_groups]
-                    for serv_grp in serv_groups:
-                        if serv_grp.name in objects:
-                            results["success"].append({
-                                "type": "service_group",
-                                "name": serv_grp.name,
-                                "value": serv_grp.value
-                            })
-                    fail = [f"service_group_{n}" for n in objects if n not in all_serv_grp]
-                    results["fail"].extend(fail)
-
-                if object_type == "edls":
-                    objects = [obj.get('name') for obj in object_value]
-                    edls = Edl.refreshall(self.scope)
-                    all_edls = [edl.name for edl in edls]
-                    for edl in edls:
-                        if edl.name in objects:
-                            results["success"].append({
-                                "type": "edl",
-                                "name": edl.name,
-                                "edl_type": edl.edl_type,
-                                "value": edl.source
-                            })
-                    fail = [f"edl_{n}" for n in objects if n not in all_edls]
-                    results["fail"].extend(fail)
-
-            return results
-
-        except Exception as e:
-            logger.error(f"Error listing objects: {e}")
-            return {}
 
 def parse_arguments():
     import getpass
@@ -816,7 +849,7 @@ def parse_arguments():
     parser.add_argument("--file", "-f", type=str,
                         help="Object configuration JSON file")
     parser.add_argument("--operation", "-o", choices=['create', 'delete', 'list'], 
-                        nargs="?", const="list", default='search',
+                        nargs="?", const="list", default='list',
                         help="Operation commands to create/delete/list objects in Panorama. Default to 'list'")
 
     # Search arguments
@@ -850,7 +883,7 @@ def main():
     """
 
     args = parse_arguments()
-    basePath = Path.home() / 'pyenv3.9' / 'panos' / 'pano_project'
+    basePath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_project'
     filepath = f"{basePath}/config/{args.file}"
 
     PANORAMA_HOST = args.hostname
@@ -859,17 +892,17 @@ def main():
     PASSWORD = args.passwd
     OPERATION = args.operation
     VAULT = "panos_secrets.bin"
-    vaultpath = Path.home() / 'pyenv3.9' / 'secrets'
+    vaultpath = Path.home() / 'pyenv3.13' / 'secrets'
     objects_data = {}
 
     # Get object data
     if os.path.isfile(filepath):
         with open(filepath, 'r', encoding='utf-8-sig') as f:
-            configdata = json.load(f)
-        DEVICE_GROUP = configdata.get('device_group')
-        objects_data = {k: v for k, v in configdata.items() if k != "device_group"}
+            data = json.load(f)
+        objects_data = {k: v for k, v in data.items() if v}
     elif all(a for a in [args.scope, args.type, args.name]):
         DEVICE_GROUP = args.scope
+        OPERATION = 'list'
         if args.type == 'address':
             obj_type = "address_objects"
         elif args.type == 'addressgroup':
@@ -882,8 +915,7 @@ def main():
             obj_type = "url_categories"
         elif args.type == 'edl':
             obj_type = "edls"
-        objects_data = {obj_type: [{"name": n} for n in args.name]}
-        OPERATION = 'search'
+        objects_data = {DEVICE_GROUP: {obj_type: [{"name": n} for n in args.name]}}
     else:
         logger.info("Error: Objects must be provided")
         sys.exit(0)
@@ -893,16 +925,14 @@ def main():
         if API_KEY:
             manager = PanoramaObjectManager(
                 hostname=PANORAMA_HOST,
-                api_key=API_KEY,
-                device_group=DEVICE_GROUP
+                api_key=API_KEY
             )
         elif not API_KEY and not USERNAME:
             credentails = get_secret(VAULT, vaultpath)
             API_KEY = credentails.get("pano_apikey")
             manager = PanoramaObjectManager(
                 hostname=PANORAMA_HOST,
-                api_key=API_KEY,
-                device_group=DEVICE_GROUP
+                api_key=API_KEY
             )
         elif USERNAME:
             if not PASSWORD:
@@ -912,45 +942,25 @@ def main():
             manager = PanoramaObjectManager(
                 hostname=PANORAMA_HOST,
                 username=USERNAME,
-                password=PASSWORD,
-                device_group=DEVICE_GROUP
+                password=PASSWORD
             )
         else:
             credentails = get_secret(VAULT, vaultpath)
             API_KEY = credentails.get("pano_apikey")
             manager = PanoramaObjectManager(
                 hostname=PANORAMA_HOST,
-                api_key=API_KEY,
-                device_group=DEVICE_GROUP
+                api_key=API_KEY
             )
     
-        if any(OPERATION == op for op in ['create', 'delete']):
-            # ==================== CREATE/UPDATE OBJECTS ====================
-            logger.info("=" * 60)
-            logger.info(f"Creating/deleting objects in '{DEVICE_GROUP}'")
-            logger.info("=" * 60)
+        if any(OPERATION == op for op in ['create', 'delete', 'list']):
+            # ==================== OBJECT OPERATION ====================
     
-            results = manager.bulk_operate_objects(OPERATION, objects_data)
+            results = manager.object_operation(OPERATION, objects_data)
     
             logger.info("Operation results:")
             for obj_name, success in results.items():
                 status = "✓" if success else "✗"
                 logger.info(f"  {status} {obj_name}")
-    
-        elif any(OPERATION == op for op in ['list', 'search']):
-            # ==================== DISPLAY OBJECTS ====================
-            logger.info(f"Searching objects in device group '{DEVICE_GROUP}':")
-            logger.info("=" * 60)
-            output = manager.list_objects(objects_data)
-    
-            if output["success"]:
-                for obj in output["success"]:
-                    value = [",".join(map(str, v)) if isinstance(v, list) else v for k, v in obj.items() if k != 'name' and k != 'type' and k != 'description']
-                    logger.info(f"✓ {obj.get('type')}_{obj.get('name')}")
-                    logger.info(f"Object value: {(' ').join(value)}")
-            if output["fail"]:
-                for obj in output["fail"]:
-                    logger.info(f"✗ {obj}")
     
         logger.info("=" * 60)
         logger.info("Operations completed successfully!")
