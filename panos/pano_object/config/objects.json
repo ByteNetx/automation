@@ -1,5 +1,5 @@
 {
-    "RJUK-Inet": {
+    "DG-Inet": {
         "address_groups": [
             {
                 "name": "database-servers", 
