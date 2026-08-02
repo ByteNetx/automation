@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Palo Alto Networks Strata Cloud manager (SCM)
+PAN Strata Cloud manager (SCM)
 This script configures interfaces, logical router, 
-and BGP routing on PA NGFW managed by SCM.
+and BGP routing on PA NGFW managed by SCM
 """
 
 import time
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class OperationType(Enum):
-    """Supported operation types"""
+    """Supported operation mode"""
     CREATE = "create"
     DELETE = "delete"
     LIST = "list"
@@ -182,7 +182,7 @@ class ScmAPI:
         """Create a single object"""
         try:
             endpoint = f"/config/network/v1/{object_type}"
-            data.update({self.scope.to_dict().get('type'): self.scope.to_dict().get('value')})
+            data.update(self.scope.to_params())
             logger.info(f"Creating {object_type}-{data.get('name')} in {self.scope.to_dict().get('type')}-{self.scope.to_dict().get('value')}")
             return self._make_api_request("POST", endpoint, data=data)
 
@@ -190,9 +190,26 @@ class ScmAPI:
             logger.error(f"Failed to create network configuration: {e}")
             return []
 
+    def update_object(self, object_type: str, data: Dict) -> Dict:
+        """Update a single object"""
+        try:
+            name = data.get("name")
+            data.update(self.scope.to_params())
+            existing = self.list_object(object_type, name)
+            if existing:
+                uuid = existing[0].get("id")
+                endpoint = f"/config/network/v1/{object_type}/{uuid}"
+                logger.info(f"Updating {object_type}-{data.get('name')} in {self.scope.to_dict().get('type')}-{self.scope.to_dict().get('value')}")
+                return self._make_api_request("PUT", endpoint, data=data)
+
+        except Exception as e:
+            logger.error(f"Failed to updating network configuration: {e}")
+            return []
+
     def list_object(self, object_type: str, name = str, limit: int = 200, offset: int = 0) -> List[Dict]:
         """Retrieve a single object"""
         endpoint = f"/config/network/v1/{object_type}"
+        #print(self.scope.to_params())
         params = self.scope.to_params()
         params.update({"name": name})
         params.update({"limit": limit, "offset": offset})
@@ -234,6 +251,12 @@ class ScmAPI:
                 for obj in objects:
                     response = self.create_object(object_type, obj)
                     results.append(response)
+
+        if operation == OperationType.UPDATE.value:
+            for object_type, objects in config_data.items():
+                for obj in objects:
+                    response = self.update_object(object_type, obj)
+                    results.append(response)
     
         return results
 
@@ -256,9 +279,9 @@ def parse_arguments():
     #                    help="SCM client identifier")
     parser.add_argument("--file", "-f", type=str,
                         help="Object configuration JSON file")
-    parser.add_argument("--operation", "-o", choices=['create', 'delete', 'list'], 
+    parser.add_argument("--operation", "-o", choices=['create', 'update', 'list'], 
                         nargs="?", const="list", default='list',
-                        help="Operation commands to create/delete/list configuration in SCM scope. Default to 'list'")
+                        help="Operation commands to create/update/list configuration in SCM scope. Default to 'list'")
 
     # Search arguments
     group = parser.add_argument_group(title="List configuration in SCM scope")
@@ -286,8 +309,8 @@ def main():
     SCOPE = {}
     config_data = {}
 
-    CLIENT_ID = "xxxxxx.iam.panserviceaccount.com"
-    TSG_ID = "tsg_id:xxxxxx"
+    CLIENT_ID = "{}.iam.panserviceaccount.com"
+    TSG_ID = "{}"
     credentails = get_secret(VAULT, vaultpath)
     CLIENT_SECRET = credentails.get(CLIENT_ID)
     OPERATION = args.operation
