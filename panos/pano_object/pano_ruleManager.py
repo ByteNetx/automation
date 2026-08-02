@@ -144,7 +144,7 @@ class PanoramaRuleManager:
             
             try:
                 # Apply the changes to Panorama
-                existing_rule.create()
+                existing_rule.apply()
                 RuleAuditComment(existing_rule).update(self.audit_comment)
                 logger.info(f"Rule '{rule_name}' updated successfully in {rulebase_type.lower()}.")
                 return True
@@ -364,7 +364,7 @@ def parse_arguments():
     parser.add_argument("--file", "-f", type=str,
                         help="Object configuration JSON file")
     parser.add_argument("--operation", "-o", choices=['create', 'delete', 'move', 'list'], 
-                        nargs="?", const="list", default='search',
+                        nargs="?", const="list", default='list',
                         help="Operation commands to create/delete/move/list rulebase in Panorama Device Group. Default to 'list'")
 
     # Authentication arguments (either apikey or username/password)
@@ -415,7 +415,8 @@ def main():
     if os.path.isfile(filepath):
         with open(filepath, 'r', encoding='utf-8-sig') as f:
             data = json.load(f)
-        AUDIT_COMMENT = data.get('audit_comment', None)
+        if not AUDIT_COMMENT:
+            AUDIT_COMMENT = data.get('audit_comment', None)
         cfg_data = {k: v for k, v in data.items() if k != "audit_comment"}
     else:
         logger.info("Error: Objects must be provided")
