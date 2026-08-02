@@ -1,0 +1,34 @@
+{
+    "audit_comment": "CHG1234569",
+    "DG-Inet": {
+        "PostRulebase": {
+            "rulebase": [
+                {
+                    "name": "Test-Rule1",
+                    "fromzone": ["Trust"],
+                    "tozone": ["Inet"],
+                    "source": ["uk-vm-nag-1"],
+                    "destination": ["any"],
+                    "application": ["ping", "snmp", "syslog"],
+                    "service": ["application-default"],
+                    "action": "allow",
+                    "log_setting": "Logging",
+                    "description": "Created by panos SDK"
+                },
+                {
+                    "name": "Test-Rule2",
+                    "fromzone": ["Trust"],
+                    "tozone": ["Inet"],
+                    "source": ["glo-net-rfc1918-10.0.0.0"],
+                    "destination": ["any"],
+                    "application": ["ping", "ssl", "web-browsing"],
+                    "service": ["application-default"],
+                    "action": "allow",
+                    "log_setting": "Logging",
+                    "description": "Created by panos SDK"
+                }
+            ],
+            "move": { "position": "before", "target": "IS133 - Device Hub Access" }
+        }
+    }
+}
