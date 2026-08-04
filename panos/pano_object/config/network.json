@@ -1,0 +1,53 @@
+{
+    "vsys": "",
+    "layer3_subinterfaces": [
+        {
+            "parent_interface_name": "ethernet1/4",
+            "subinterfaces": [
+                {
+                    "vlan_tag": 100,
+                    "ip": ["192.168.103.1/24"],
+                    "management_profile": "mgmt-profile-ping",
+                    "comment": "Created by PANetworkManager script"
+                }
+            ]
+        },
+        {
+            "parent_interface_name": "ethernet1/5",
+            "subinterfaces": [
+                {
+                    "vlan_tag": 200,
+                    "ip": ["192.168.104.1/24"],
+                    "management_profile": "mgmt-profile-ping",
+                    "comment": "Created by PANetworkManager script"
+                },
+                {
+                    "vlan_tag": 201,
+                    "ip": ["192.168.105.1/24"],
+                    "management_profile": "mgmt-profile-ping",
+                    "comment": "Created by PANetworkManager script"
+                }
+            ]
+        }        
+    ],
+    "zones": [
+        {
+            "zone_name": "lab3",
+            "zone_mode": "layer3",
+            "interfaces": ["ethernet1/5.200", "ethernet1/5.201", "ethernet1/4.100"]
+        }
+    ],
+    "virtual_routers": [
+        {
+            "virtual_router_name": "vr-lab3",
+            "redistribution_profiles":[
+                {
+                    "redist_profile_name": "redist-connect",
+                    "redist_filter_type": ["connect"],
+                    "redist_filter_interface": ["ethernet1/5.200", "ethernet1/5.201", "ethernet1/4.100"]
+                }
+            ],
+            "interfaces": ["ethernet1/5.200", "ethernet1/5.201", "ethernet1/4.100"]
+        }
+    ]
+}
