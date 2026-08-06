@@ -66,7 +66,7 @@ class PanoramaObjectManager:
     """
 
     def __init__(self, hostname: str, username: str = None, password: str = None,
-                 api_key: str = None, **kwargs):
+                 api_key: str = None, commit_changes: bool=False, **kwargs):
         """
         Initialize the Panorama connection.
 
@@ -75,8 +75,11 @@ class PanoramaObjectManager:
             username: Username for authentication (optional if api_key provided)
             password: Password for authentication (optional if api_key provided)
             api_key: API key for authentication (optional)
+            commit_changes: Whether to commit changes
         """
         self.hostname = hostname
+        self.username = username
+        self.commit_changes = commit_changes
         self.scope = None
 
         if api_key:
@@ -820,7 +823,17 @@ class PanoramaObjectManager:
                                     success = False
                                 results[f"edl_{name}"] = success
     
-                return results
+            if any(operation == op for op in [OperationType.from_string('create').value, OperationType.from_string('delete').value]) and results:
+                # Commit changes if requested
+                if self.commit_changes:
+                    logger.info("Committing changes...")
+                    self.panorama.commit(admins=[self.username], sync=True)
+                    logger.info("Commit completed successfully")
+                else:
+                    logger.info("Updated candidate configuration. Changes not committed")
+
+
+            return results
 
         except Exception as e:
             logger.error(f"Error in object operation: {e}")
@@ -851,6 +864,8 @@ def parse_arguments():
     parser.add_argument("--operation", "-o", choices=['create', 'delete', 'list'], 
                         nargs="?", const="list", default='list',
                         help="Operation commands to create/delete/list objects in Panorama. Default to 'list'")
+    parser.add_argument("--commit", action='store_true',
+                                    help="Enable commit")
 
     # Search arguments
     search = parser.add_argument_group(title="Search objects")
@@ -883,7 +898,7 @@ def main():
     """
 
     args = parse_arguments()
-    basePath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_project'
+    basePath = Path.home() / 'pyenv3.9' / 'panos' / 'pano_project'
     filepath = f"{basePath}/config/{args.file}"
 
     PANORAMA_HOST = args.hostname
@@ -891,8 +906,9 @@ def main():
     USERNAME = args.username
     PASSWORD = args.passwd
     OPERATION = args.operation
+    COMMIT = args.commit
     VAULT = "panos_secrets.bin"
-    vaultpath = Path.home() / 'pyenv3.13' / 'secrets'
+    vaultpath = Path.home() / 'pyenv3.9' / 'secrets'
     objects_data = {}
 
     # Get object data
@@ -925,14 +941,16 @@ def main():
         if API_KEY:
             manager = PanoramaObjectManager(
                 hostname=PANORAMA_HOST,
-                api_key=API_KEY
+                api_key=API_KEY,
+                commit_changes=COMMIT
             )
         elif not API_KEY and not USERNAME:
             credentails = get_secret(VAULT, vaultpath)
             API_KEY = credentails.get("pano_apikey")
             manager = PanoramaObjectManager(
                 hostname=PANORAMA_HOST,
-                api_key=API_KEY
+                api_key=API_KEY,
+                commit_changes=COMMIT
             )
         elif USERNAME:
             if not PASSWORD:
@@ -942,15 +960,12 @@ def main():
             manager = PanoramaObjectManager(
                 hostname=PANORAMA_HOST,
                 username=USERNAME,
-                password=PASSWORD
+                password=PASSWORD,
+                commit_changes=COMMIT
             )
         else:
-            credentails = get_secret(VAULT, vaultpath)
-            API_KEY = credentails.get("pano_apikey")
-            manager = PanoramaObjectManager(
-                hostname=PANORAMA_HOST,
-                api_key=API_KEY
-            )
+            logger.error("Missing parameters required to connect Panorama")
+            sys.exit()
     
         if any(OPERATION == op for op in ['create', 'delete', 'list']):
             # ==================== OBJECT OPERATION ====================
