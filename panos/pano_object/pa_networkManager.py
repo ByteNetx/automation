@@ -495,7 +495,7 @@ class PANetworkManager:
                 self.fw.commit(admins=[self.username], sync=True)
                 logger.info("Commit completed successfully")
             else:
-                logger.info("Dry-run completed. Changes not committed")
+                logger.info("Updated candidate configuration. Changes not committed")
 
             self.created_objects = list(set(self.created_objects))
             self.existing_objects = list(set(self.existing_objects))
