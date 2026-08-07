@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
 from enum import Enum
-from panos.panorama import Panorama, DeviceGroup
+from panos.panorama import Panorama, DeviceGroup, PanoramaCommit
 from panos.policies import PreRulebase, PostRulebase, SecurityRule, RuleAuditComment
 
 # Configure logging
@@ -54,7 +54,7 @@ class PanoramaRuleManager:
     """
 
     def __init__(self, hostname: str, username: str=None, password: str=None,
-                     api_key: str=None, audit_comment: str=None, **kwargs):
+                     api_key: str=None, audit_comment: str=None, commit_changes: bool=False, **kwargs):
 
         """
         Initializes the Panorama connection.
@@ -65,10 +65,13 @@ class PanoramaRuleManager:
             password: Password for authentication (optional if api_key provided)
             api_key: API key for authentication (optional)
             audit_comment: Audit comment for the given rule (Only required for create/update rules)
+            commit_changes: Whether to commit changes
         """
         self.hostname = hostname
         self.audit_comment = audit_comment
+        self.commit_changes = commit_changes
         self.scope = None
+        self.rulebase = None
 
         if api_key:
             self.panorama = Panorama(hostname, api_key=api_key)
@@ -180,12 +183,12 @@ class PanoramaRuleManager:
             rulebase_type (str): Rulebase type either 'PreRulebase' or 'PostRulebase'.
             rule_name (str): The name of the rule to move.
             position (str): Position either 'before' or 'after'.
-            target_rule (str): The name of target rule, which isrequired for 'before' or 'after' positions.
+            target_rule (str): The name of target rule, which is required for 'before' or 'after' positions.
         """
         existing_rule = self._get_existing_rule(rulebase_type, rule_name)
         if not existing_rule:
             logger.error(f"Rule '{rule_name}' not found in {rulebase_type.lower()}.")
-            return
+            return False
 
         try:
             existing_rule.move(position, target_rule)
@@ -206,7 +209,7 @@ class PanoramaRuleManager:
         existing_rule = self._get_existing_rule(rulebase_type, rule_name)
         if not existing_rule:
             logger.error(f"Rule '{rule_name}' not found in {rulebase_type.lower()}.")
-            return
+            return False
 
         try:
             existing_rule.delete()
@@ -222,7 +225,7 @@ class PanoramaRuleManager:
 
         Args:
             rulebase_type (str): Rulebase type either 'PreRulebase' or 'PostRulebase'.
-            rule_name (str): The name of the rule to delete.
+            rule_name (str): The name of the rule to search.
         """
         existing_rule = self._get_existing_rule(rulebase_type, rule_name)
         if existing_rule:
@@ -285,7 +288,7 @@ class PanoramaRuleManager:
                                                 success = self.move_rule(rule_type, name, position, target)
 
                                         results[f"{rule_type.lower()}_{name}"] = success
-
+                                
                     else:
                         logger.error(f"Valid audit comment required to create/update rules")
                         return results
@@ -335,7 +338,18 @@ class PanoramaRuleManager:
                                 if name:
                                     success = self.list_rule(rule_type, name)
                                     results[f"{rule_type.lower()}_{name}"] = success
-                return results
+
+
+            if any(operation == op for op in [OperationType.from_string('create').value, OperationType.from_string('delete').value, OperationType.from_string('move')]) and results:
+                # Commit changes if requested
+                if self.commit_changes:
+                    logger.info("Committing changes...")
+                    self.panorama.commit(admins=[self.username], sync=True)
+                    logger.info("Commit completed successfully")
+                else:
+                    logger.info("Updated candidate configuration. Changes not committed")
+
+            return results
 
         except Exception as e:
             logger.error(f"Error in rule operation: {e}")
@@ -366,6 +380,8 @@ def parse_arguments():
     parser.add_argument("--operation", "-o", choices=['create', 'delete', 'move', 'list'], 
                         nargs="?", const="list", default='list',
                         help="Operation commands to create/delete/move/list rulebase in Panorama Device Group. Default to 'list'")
+    parser.add_argument("--commit", action='store_true',
+                                help="Enable commit")
 
     # Authentication arguments (either apikey or username/password)
     auth = parser.add_mutually_exclusive_group(required=False)
@@ -396,7 +412,7 @@ def main():
     """
 
     args = parse_arguments()
-    basePath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_project'
+    basePath = Path.home() / 'pyenv3.9' / 'panos' / 'pano_project'
     filepath = f"{basePath}/config/{args.file}"
 
     PANORAMA_HOST = args.hostname
@@ -405,10 +421,11 @@ def main():
     PASSWORD = args.passwd
     OPERATION = args.operation
     AUDIT_COMMENT = args.audit or None
+    COMMIT = args.commit
     POSITION = args.position
     TARGET = args.target
     VAULT = "panos_secrets.bin"
-    vaultpath = Path.home() / 'pyenv3.13' / 'secrets'
+    vaultpath = Path.home() / 'pyenv3.9' / 'secrets'
     cfg_data = {}
 
     # Get object data
@@ -429,7 +446,8 @@ def main():
             manager = PanoramaRuleManager(
                 hostname=PANORAMA_HOST,
                 api_key=API_KEY,
-                audit_comment=AUDIT_COMMENT
+                audit_comment=AUDIT_COMMENT,
+                commit_changes=COMMIT
             )
         elif not API_KEY and not USERNAME:
             credentails = get_secret(VAULT, vaultpath)
@@ -437,7 +455,8 @@ def main():
             manager = PanoramaRuleManager(
                 hostname=PANORAMA_HOST,
                 api_key=API_KEY,
-                audit_comment=AUDIT_COMMENT
+                audit_comment=AUDIT_COMMENT,
+                commit_changes=COMMIT
             )
         elif USERNAME:
             if not PASSWORD:
@@ -448,16 +467,12 @@ def main():
                 hostname=PANORAMA_HOST,
                 username=USERNAME,
                 password=PASSWORD,
-                audit_comment=AUDIT_COMMENT
+                audit_comment=AUDIT_COMMENT,
+                commit_changes=COMMIT
             )
         else:
-            credentails = get_secret(VAULT, vaultpath)
-            API_KEY = credentails.get("pano_apikey")
-            manager = PanoramaRuleManager(
-                hostname=PANORAMA_HOST,
-                api_key=API_KEY,
-                audit_comment=AUDIT_COMMENT
-            )
+            logger.error("Missing parameters required to connect Panorama")
+            sys.exit()
 
         if any(OperationType.from_string(OPERATION).value == op for op in ['create', 'delete', 'move', 'list']):
 
