@@ -1,7 +1,7 @@
 {
     "audit_comment": "CHG1234569",
     "DG-Inet": {
-        "PostRulebase": {
+        "post-rulebase": {
             "rulebase": [
                 {
                     "name": "Test-Rule1",
