@@ -150,8 +150,7 @@ class PanoramaObjectManager:
                 logger.info(f"URL Category '{name}' does not exist, creating...")
 
                 new_params = {"name": name}
-                new_params.updte(url_params)
-                print(new_params)
+                new_params.update(url_params)
 
                 new_obj = CustomUrlCategory(**new_params)
                 self.scope.add(new_obj)
@@ -217,7 +216,7 @@ class PanoramaObjectManager:
                 logger.info(f"Address Object '{name}' does not exist, creating...")
 
                 new_params = {"name": name}
-                new_params.updte(address_params)
+                new_params.update(address_params)
 
                 new_obj = AddressObject(**new_params)
                 self.scope.add(new_obj)
@@ -882,7 +881,7 @@ def main():
     """
 
     args = parse_arguments()
-    basePath = Path.home() / 'pyenv3.9' / 'panos' / 'pano_project'
+    basePath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_project'
     filepath = f"{basePath}/config/{args.file}"
 
     PANORAMA_HOST = args.hostname
@@ -892,7 +891,7 @@ def main():
     OPERATION = args.operation
     COMMIT = args.commit
     VAULT = "panos_secrets.bin"
-    vaultpath = Path.home() / 'pyenv3.9' / 'secrets'
+    vaultpath = Path.home() / 'pyenv3.13' / 'secrets'
     objects_data = {}
 
     # Get object data
