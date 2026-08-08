@@ -117,17 +117,16 @@ class PanoramaObjectManager:
 
     # ==================== URL CATEGORY METHODS ====================
 
-    def create_or_update_url_category(self, name: str, url_list: List[str],
-                                      description: str = None,
-                                      category_type: str = "URL List") -> bool:
+    def create_or_update_url_category(self, name: str, url_params: Dict) -> bool:
         """
         Create a new custom URL category or update an existing one.
 
+        The url_params dictionary should contain the standard url parameters.
         Args:
-            name: Name of the URL category (max 31 chars)
-            url_list: List of URLs or domain patterns
-            description: Optional description (max 255 chars)
-            category_type: "URL List" or "Category Match"
+            name: (str) Name of the URL category (max 31 chars)
+            url_value: (list) List of URLs or domain patterns
+            description: (str) Optional description (max 255 chars)
+            type: (str) "URL List" or "Category Match"
 
         Returns:
             True if successful, False otherwise
@@ -136,23 +135,30 @@ class PanoramaObjectManager:
             existing = self._get_existing_object(CustomUrlCategory, name)
 
             if existing:
-                logger.info(f"URL Category '{name}' already exists. Updating...")
-                existing.url_value = url_list
-                if description:
-                    existing.description = description
+                logger.info(f"URL Category '{existing.name}' already exists, updating...")
+
+                for key, value in url_params.items():
+                    if hasattr(existing, key):
+                        setattr(existing, key, value)
+
                 existing.apply()
-                logger.info(f"Successfully updated URL category '{name}'")
+
+                if not existing:
+                    return False
+
             else:
-                logger.info(f"URL Category '{name}' does not exist. Creating...")
-                new_obj = CustomUrlCategory(
-                    name=name,
-                    url_value=url_list,
-                    description=description,
-                    type=category_type
-                )
+                logger.info(f"URL Category '{name}' does not exist, creating...")
+
+                new_params = {"name": name}
+                new_params.updte(url_params)
+                print(new_params)
+
+                new_obj = CustomUrlCategory(**new_params)
                 self.scope.add(new_obj)
                 new_obj.create()
-                logger.info(f"Successfully created URL category '{name}'")
+
+                if not new_obj:
+                    return False
 
             return True
 
@@ -177,70 +183,48 @@ class PanoramaObjectManager:
 
     # ==================== ADDRESS OBJECT METHODS ====================
 
-    def create_or_update_address_object(self, name: str, ip_address: str = None,
-                                        description: str = None,
-                                        ip_range: str = None,
-                                        subnet: str = None,
-                                        fqdn: str = None,
-                                        ip_wildcard: str = None) -> bool:
+    def create_or_update_address_object(self, name: str, address_params: Dict) -> bool:
         """
         Create or update an address object.
 
+        The address_params dictionary should contain the standard address object parameters.
         Args:
-            name: Name of the address object
-            ip_address: Single IP address (e.g., "192.168.1.1")
-            description: Optional description
-            ip_range: IP range (e.g., "192.168.1.1-192.168.1.10")
-            subnet: Subnet (e.g., "192.168.1.0/24")
-            fqdn: FQDN (e.g., "www.example.com")
-            ip_wildcard: Wildcard IP (e.g., "192.168.1.*")
-
-        Note: Provide exactly ONE of ip_address, ip_range, subnet, fqdn, or ip_wildcard
+            name: (str) Name of the address object
+            type: (str) Type of address is ip-netmask (default), ip-range, ip-wildcard, or fqdn
+            value: (str) IP address or other value of the object
+            description: (str) Optional description
 
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Determine the value type
-            if ip_address:
-                value_type = "ip-netmask"
-                value = ip_address
-            elif ip_range:
-                value_type = "ip-range"
-                value = ip_range
-            elif subnet:
-                value_type = "ip-netmask"
-                value = subnet
-            elif fqdn:
-                value_type = "fqdn"
-                value = fqdn
-            elif ip_wildcard:
-                value_type = "ip-wildcard"
-                value = ip_wildcard
-            else:
-                raise ValueError("Must provide one of: ip_address, ip_range, subnet, fqdn, or ip_wildcard")
 
             existing = self._get_existing_object(AddressObject, name)
 
             if existing:
-                logger.info(f"Address Object '{name}' already exists. Updating...")
-                existing.type = value_type
-                existing.value = value
-                if description:
-                    existing.description = description
+                logger.info(f"Address Object '{existing.name}' already exists, updating...")
+
+                for key, value in address_params.items():
+                    if hasattr(existing, key):
+                        setattr(existing, key, value)
+
                 existing.apply()
-                logger.info(f"Successfully updated address object '{name}'")
+
+                if not existing:
+                    return False
+
             else:
-                logger.info(f"Address Object '{name}' does not exist. Creating...")
-                new_obj = AddressObject(
-                    name=name,
-                    value=value,
-                    type=value_type,
-                    description=description
-                )
+                logger.info(f"Address Object '{name}' does not exist, creating...")
+
+                new_params = {"name": name}
+                new_params.updte(address_params)
+
+                new_obj = AddressObject(**new_params)
                 self.scope.add(new_obj)
                 new_obj.create()
-                logger.info(f"Successfully created address object '{name}'")
+
+                if not new_obj:
+                    return False
 
             return True
 
@@ -371,12 +355,11 @@ class PanoramaObjectManager:
 
     # ==================== SERVICE OBJECT METHODS ====================
 
-    def create_or_update_service_object(self, name: str, protocol: str,
-                                        destination_port: str,
-                                        description: str = None) -> bool:
+    def create_or_update_service_object(self, name: str, service_params: Dict) -> bool:
         """
         Create or update an service object.
 
+        The service_params dictionary should contain the standard service object parameters.
         Args:
             name: Name of the service object
             protocol: Protocol of the service, either tcp or udp
@@ -390,24 +373,29 @@ class PanoramaObjectManager:
             existing = self._get_existing_object(ServiceObject, name)
 
             if existing:
-                logger.info(f"Service Object '{name}' already exists. Updating...")
-                existing.protocol = protocol
-                existing.destination_port = destination_port
-                if description:
-                    existing.description = description
+                logger.info(f"Service Object '{existing.name}' already exists, updating...")
+
+                for key, value in service_params.items():
+                    if hasattr(existing, key):
+                        setattr(existing, key, value)
+
                 existing.apply()
-                logger.info(f"Successfully updated service object '{name}'")
+
+                if not existing:
+                    return False
+
             else:
-                logger.info(f"Service Object '{name}' does not exist. Creating...")
-                new_obj = ServiceObject(
-                    name=name,
-                    protocol=protocol,
-                    destination_port=destination_port,
-                    description=description
-                )
+                logger.info(f"Service Object '{name}' does not exist, creating...")
+
+                new_params = {"name": name}
+                new_params.update(service_params)
+
+                new_obj = ServiceObject(**new_params)
                 self.scope.add(new_obj)
                 new_obj.create()
-                logger.info(f"Successfully created service object '{name}'")
+
+                if not new_obj:
+                    return False                
 
             return True
 
@@ -484,19 +472,20 @@ class PanoramaObjectManager:
 
     # ==================== EXTERNAL DYNAMIC LIST METHODS ====================
 
-    def create_or_update_edl(self, name: str, source: str, repeat: str,
-                            edl_type: str, description: str=None, 
-                            certificate_profile: str=None, 
-                            username: str=None, password: str=None) -> bool:
+    def create_or_update_edl(self, name: str, edl_params: Dict) -> bool:
         """
         Create a new External Dynamic List or update an existing one.
 
+        The edl_params dictionary should contain the standard edl parameters.
         Args:
-            name: Name of the External Dynamic List
-            edl_type: must be one of : "ip", "url", or "domain"
-            source: Source of edl
-            repeat: Retrieval interval. Valid values are “five-minute”, “hourly”, “daily”, “weekly”, or “monthly”.
-            description: Optional description (max 255 chars)
+            name: (str) Name of the External Dynamic List
+            edl_type: (str) must be one of : "ip", "url", or "domain"
+            source: (str) Source of edl
+            repeat: (str) Retrieval interval. Valid values are “five-minute”, “hourly”, “daily”, “weekly”, or “monthly”.
+            description: (str) Optional description
+            certificate_profile: (str) Profile for authenticating client certificates
+            username: (str) Username for authentication
+            password: (str) Password for authentication
 
         Returns:
             True if successful, False otherwise
@@ -505,34 +494,29 @@ class PanoramaObjectManager:
             existing = self._get_existing_object(Edl, name)
 
             if existing:
-                logger.info(f"External Dynamic List '{name}' already exists. Updating...")
-                existing.edl_type = edl_type
-                existing.source = source
-                existing.repeat = repeat
-                if username and password:
-                    existing.username = username
-                    existing.password = password
-                if certificate_profile:
-                    existing.certificate_profile = certificate_profile
-                if description:
-                    existing.description = description
+                logger.info(f"External Dynamic List '{existing.name}' already exists, updating...")
+
+                for key, value in edl_params.items():
+                    if hasattr(existing, key):
+                        setattr(existing, key, value)
+
                 existing.apply()
-                logger.info(f"Successfully updated External Dynamic list '{name}'")
+
+                if not existing:
+                    return False
+
             else:
-                logger.info(f"External Dynamic list '{name}' does not exist. Creating...")
-                new_obj = Edl(
-                    name=name,
-                    edl_type=edl_type,
-                    source=source,
-                    repeat = repeat,
-                    description=description,
-                    username = username,
-                    password = password,
-                    certificate_profile = certificate_profile
-                )
+                logger.info(f"External Dynamic list '{name}' does not exist, creating...")
+
+                new_params = {"name": name}
+                new_params.update(edl_params)
+
+                new_obj = Edl(**new_params)
                 self.scope.add(new_obj)
                 new_obj.create()
-                logger.info(f"Successfully created External Dynamic List '{name}'")
+
+                if not new_obj:
+                    return False
 
             return True
 
@@ -592,7 +576,7 @@ class PanoramaObjectManager:
                             name = addr_obj.get("name")
                             if name:
                                 addr_params = {k: v for k, v in addr_obj.items() if k != "name"}
-                                success = self.create_or_update_address_object(name, **addr_params)
+                                success = self.create_or_update_address_object(name, addr_params)
                                 results[f"address_object_{name}"] = success
 
                     # Create URL categories
@@ -604,7 +588,7 @@ class PanoramaObjectManager:
                             name = url_cat.get("name")
                             if name:
                                 url_params = {k: v for k, v in url_cat.items() if k != "name"}
-                                success = self.create_or_update_url_category(name, **url_params)
+                                success = self.create_or_update_url_category(name, url_params)
                                 results[f"url_category_{name}"] = success
         
                     # Create address groups
@@ -631,7 +615,7 @@ class PanoramaObjectManager:
                             name = serv_obj.get("name")
                             if name:
                                 serv_params = {k: v for k, v in serv_obj.items() if k != "name"}
-                                success = self.create_or_update_service_object(name, **serv_params)
+                                success = self.create_or_update_service_object(name, serv_params)
                                 results[f"service_object_{name}"] = success
     
                     # Create service groups
@@ -655,7 +639,7 @@ class PanoramaObjectManager:
                             name = edl.get("name")
                             if name:
                                 edl_params = {k: v for k, v in edl.items() if k != "name"}
-                                success = self.create_or_update_edl(name, **edl_params)
+                                success = self.create_or_update_edl(name, edl_params)
                                 results[f"edl_{name}"] = success
     
                 elif operation == OperationType.from_string('delete').value and object_data:
