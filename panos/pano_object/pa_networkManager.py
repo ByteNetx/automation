@@ -100,6 +100,26 @@ class PANetworkManager:
             logger.info(f"Virtual router {virtual_router_name} does not exist: {e}")
             return False, None
 
+    def check_zone_exists(self, zone_name) -> Tuple[bool, Optional[network.Zone]]:
+        """
+        Check if a zone already exist on the firewall.
+
+        Returns:
+            Optional[network.Zone]: The zone object
+        """
+        try:
+            zone = network.Zone(name=zone_name)
+            self.fw.add(zone)
+
+            zone.refresh(self.fw)
+            self.existing_objects.append(('zone', zone.name))
+
+            return True, zone
+            
+        except:
+            logger.info(f"Zone {zone_name} does not exist")
+            return False, None
+
     def check_redist_profile_exists(self, virtual_router_name: str, redist_profile_name: str) -> Tuple[bool, Optional[network.RedistributionProfile]]:
         """
         Check if a redistribution profile already exists on the virtual router.
@@ -157,164 +177,113 @@ class PANetworkManager:
         """
         Create a parent interface on the firewall.
 
-        Returns:
-            
+        Returns: 
+            Optional[network.Interface]: The interface object
         """
+
         try:
             if parent_interface_name.startswith("ae"):
-                parent_interface = network.AggregateInterface(parent_interface_name, mode=mode)
+                existing_parent_intf = network.AggregateInterface(parent_interface_name)
             else:
-                parent_interface = network.EthernetInterface(parent_interface_name, mode=mode)
+                existing_parent_intf = network.EthernetInterface(parent_interface_name)
+            self.fw.add(existing_parent_intf)
+            existing_parent_intf.refresh(self.fw)
+            logger.info(f"Interface {existing_parent_intf.name} already exist")
+            self.existing_objects.append(('parent_interface', existing_parent_intf.name))
 
-            self.fw.add(parent_interface)
-            parent_interface.create()
-            self.created_objects.append(('Interface', parent_interface.name))
-            logger.info(f"Interface {parent_interface.name} created")
-            return parent_interface
-            
+            return existing_parent_intf
+
         except PanDeviceError as e:
-            logger.info(f"It failed to create interface {parent_interface_name}: {e}")
-            return None
+            logger.info(f"Interface {parent_interface_name} does not exist, creating...")
+
+            if parent_interface_name.startswith("ae"):
+                new_parent_intf = network.AggregateInterface(name=parent_interface_name, mode=mode)
+            else:
+                new_parent_intf = network.EthernetInterface(name=parent_interface_name, mode=mode)
+            self.fw.add(new_parent_intf)
+            new_parent_intf.create()
+            self.created_objects.append(('Interface', new_parent_intf.name))
+
+            return new_parent_intf
 
     def create_subinterface(self, parent_interface: network.Interface, intf_params: Dict) -> Optional[network.Layer3Subinterface]:
-
-        try:
            
-            if not parent_interface:
-                return None
-
-            vlan_tag = intf_params.get('vlan_tag')
-            subinterface_name = f"{parent_interface.name}.{vlan_tag}"
-
-            try:
-                subinterface = network.Layer3Subinterface(subinterface_name)
-                parent_interface.add(subinterface)
-                subinterface.refresh(parent_interface)
-
-                self.existing_objects.append(('layer3_subinterface', subinterface.name))
-                logger.info(f"Layer3 subinterface {subinterface.name} already exists, updating...")
-
-                # Update existing subinterface
-                subinterface.ip = intf_params.get('ip')
-                if intf_params.get('comment'):
-                    subinterface.comment = intf_params.get('comment')
-                if intf_params.get('management_profile'):
-                    subinterface.management_profile = intf_params.get('management_profile')
-                subinterface.apply()
-
-                return subinterface
-            except:
-                logger.info(f"Subinterface {subinterface_name} does not exist, creating...")
-
-                # Create the subinterface object
-                subinterface = network.Layer3Subinterface(
-                    name=subinterface_name,
-                    tag=vlan_tag,
-                    ip=intf_params.get('ip'),
-                    management_profile=intf_params.get('management_profile') or None,
-                    comment=intf_params.get('comment') or f"Created by PANetworkManager"
-                )
-
-                parent_interface.add(subinterface)
-                
-                # Apply the subinterface
-                subinterface.create()
-            
-                self.created_objects.append(('layer3_subinterface', subinterface.name))
-                logger.info(f"layer3_subinterface {subinterface.name} created")
-
-                return subinterface
-            
-        except PanDeviceError as e:
-            logger.error(f"Failed to create/update subinterface: {e}")
-            return None
-
-    def check_zone_exists(self, zone_name) -> Tuple[bool, Optional[network.Zone]]:
-        """
-        Check if a zone already exist on the firewall.
-
-        Returns:
-            Optional[network.Zone]: The zone object
-        """
+        if not parent_interface:
+            return False
+        tag = intf_params.get('tag')
+        subinterface_name = f"{parent_interface.name}.{tag}"
         try:
-            zone = network.Zone(name=zone_name)
-            self.fw.add(zone)
-
-            zone.refresh(self.fw)
-            self.existing_objects.append(('zone', zone.name))
-
-            return True, zone
-            
+            existing_subif = network.Layer3Subinterface(subinterface_name)
+            parent_interface.add(existing_subif)
+            existing_subif.refresh(parent_interface)
+            logger.info(f"Layer3 subinterface {existing_subif.name} already exists, updating...")
+            self.existing_objects.append(('layer3_subinterface', existing_subif.name))
+            for key, value in intf_params.items():
+                if hasattr(existing_subif, key):
+                    setattr(existing_subif, key, value)                
+            existing_subif.apply()
+            if not existing_subif:
+                return False
         except:
-            logger.infor(f"Zone {zone_name} does not exist")
-            return False, None
+            logger.info(f"Subinterface {subinterface_name} does not exist, creating...")
 
-    def create_zone(self, zone_params: Dict) -> Optional[network.Zone]:
+            new_params = {"name": subinterface_name}
+            new_params.update(intf_params)
+            new_subif = network.Layer3Subinterface(**new_params)
+
+            parent_interface.add(new_subif)
+            
+            new_subif.create()
+        
+            self.created_objects.append(('layer3_subinterface', new_subif.name))
+            if not new_subif:
+                return False
+
+        return True
+
+    def create_zone(self, name, zone_params: Dict) -> bool:
         """
         Create a zone on the firewall
 
         Returns:
             Optional[network.Zone]: The zone object
         """
-        try:
-            zone_name = zone_params.get('zone_name')
-            zone_mode = zone_params.get('mode')
-            zone = network.Zone(name=zone_name, mode=zone_mode)
-            self.fw.add(zone)
 
-            zone.create()
-            logger.info(f"Zone {zone.name} created")
-            self.created_objects.append(('zone', zone.name))
-            
-            return zone
-            
-        except PanDeviceError as e:
-            logger.error(f"Failed to create zone {zone_name}: {e}")
-            return None
-    
-    def add_interface_to_zone(
-        self,
-        zone: network.Zone,
-        zn_interfaces: List
-    ) -> bool:
-        """
-        Add a layer3 subinterface to a zone.
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
         try:
-            if not zone:
-                logger.error("Invalid zone provided")
+
+            existing_zone = network.Zone(name=name)
+            self.fw.add(existing_zone)
+            existing_zone.refresh(self.fw)
+            logger.info(f"Zone '{existing_zone.name}' already exist, updating...")
+            self.existing_objects.append(('zone', existing_zone.name))
+
+            for key, value in zone_params.items():
+                if hasattr(existing_zone, key):
+                    setattr(existing_zone, key, value)
+
+            existing_zone.apply()
+
+            if not existing_zone:
                 return False
-            
-            # Get current interfaces in zone
-            current_interfaces = getattr(zone, 'interface', []) or []
-            
-            # Add new interface if not already present
-            new_intfs = [i for i in zn_interfaces if i not in current_interfaces]
 
-            if new_intfs:
-                current_interfaces.extend(new_intfs)
-                zone.interface = current_interfaces
-                zone.apply()
-                logger.info(
-                    f"Interface {new_intfs} added to zone {zone.name}"
-                )
-            else:
-                logger.info(
-                    f"Interface {new_intfs} already exist in zone {zone.name}"
-                )
-            
-            return True
-            
-        except PanDeviceError as e:
-            logger.error(f"Failed to add interface to zone: {e}")
-            return False
+        except:
+            logger.info(f"Zone '{name}' does not exist, creating...")
+            new_params = {"name": name}
+            new_params.update(zone_params)
+            new_zone = network.Zone(**new_params)
+            self.fw.add(new_zone)
+            new_zone.create()
+            self.created_objects.append(('zone', new_zone.name))
+
+            if not new_zone:
+                return False
+
+        return True
     
     def create_virtual_router(
         self,
-        virtual_router_name: str
+        name: str,
+        interface: List
     ) -> Optional[network.VirtualRouter]:
         """
         Create a virtual router on the firewall.
@@ -324,113 +293,114 @@ class PANetworkManager:
         """
 
         try:
-            virtual_router = network.VirtualRouter(virtual_router_name)
-            self.fw.add(virtual_router)
-            virtual_router.create()
-            logger.info(f"Virtual router {virtual_router.name} created")
-            self.created_objects.append(('virtual_router', virtual_router.name))
+            existing_vr = network.VirtualRouter(name)
+            self.fw.add(existing_vr)
+            existing_vr.refresh(self.fw)
+            logger.info(f"Virtual router '{existing_vr.name}' already exist, updating...")
+            self.existing_objects.append(('virtual_router', existing_vr.name))
 
-            return virtual_router
-            
-        except PanDeviceError as e:
-            logger.error(f"Failed to create virtual router {virtual_router_name}: {e}")
-            return None
-    
-    def configure_redist_profile(
+            setattr(existing_vr, 'interface', interface)
+            existing_vr.apply()
+
+            return existing_vr
+        except:
+            logger.info(f"Virtual router '{name}' does not exist, creating...")
+            new_vr = network.VirtualRouter(name=name, interface=interface)
+            self.fw.add(new_vr)
+            new_vr.create()
+            self.created_objects.append(('virtual_router', new_vr.name))
+
+            return new_vr
+
+    def create_static_route(
         self,
         virtual_router: network.VirtualRouter,
+        name: str,
+        static_route_params: Dict
+    ) -> bool:
+        """
+        Create/update static route in the virtual router.
+
+        Returns:
+            Bool
+        """
+
+        if not virtual_router:
+            logger.error(f"Invalid virtual router provided")
+            return None
+        try:
+            existing_static_route = network.StaticRoute(name)
+            virtual_router.add(existing_static_route)
+            existing_static_route.refresh(virtual_router)
+            logger.info(f"Static route '{existing_static_route.name}' already exists, updating...")
+            self.existing_objects.append(('static_route', existing_static_route.name))
+
+            for key, value in static_route_params.items():
+                if hasattr(existing_static_route, key):
+                    setattr(existing_static_route, key, value)
+
+            existing_static_route.apply()
+
+            if not existing_static_route:
+                return False
+        except:
+            logger.info(f"Static route '{name}' does not exist, creating...")
+            new_params = {"name": name}
+            new_params.update(static_route_params)
+            new_static_route = network.StaticRoute(**new_params)
+            virtual_router.add(new_static_route)
+            new_static_route.create()
+            self.created_objects.append(('static_route', new_static_route.name))
+
+            if not new_static_route:
+                return False
+        
+        return True
+
+    def create_redist_profile(
+        self,
+        virtual_router: network.VirtualRouter,
+        name: str,
         redist_profile_params: Dict
     ) -> bool:
         """
-        Configure redistribution profile and assign interface.
+        Create/update redistribution profile.
 
         Returns:
-            Optional[network.RedistributionProfile]: The redistribution profile object
+            Bool
         """
 
-        try:
-            redist_profile_name = redist_profile_params.get('redist_profile_name')
-            redist_filter_type = redist_profile_params.get('redist_filter_type')
-            redist_filter_interface = redist_profile_params.get('redist_filter_interface')
-            redist_filter_priority = redist_profile_params.get('priority', '1')
-            redist_filter_action = redist_profile_params.get('action', 'redist')
-
-
-            if not virtual_router:
-                logger.error(f"Invalid virtual router provided")
-                return None
-
-            redist_profile = network.RedistributionProfile(redist_profile_name)
-            virtual_router.add(redist_profile)
-
-            try:
-                redist_profile.refresh(virtual_router)
-                logger.info(f"Redistribution profile {redist_profile.name} already exists")
-                self.existing_objects.append(('redist_profile', redist_profile_name))
-
-            except PanDeviceError:
-                redist_profile.create()
-                logger.info(f"Redistribution profile {redist_profile.name} created")
-                self.created_objects.append(('redist_profile', redist_profile_name))
-
-            current_interfaces = getattr(redist_profile, 'filter_interface', []) or []
-            current_filter_type = getattr(redist_profile, 'filter_type', []) or []
-
-            current_interfaces.extend(redist_filter_interface)
-            redist_profile.filter_interface = current_interfaces
-            current_filter_type.extend(redist_filter_type)
-            redist_profile.filter_type = current_filter_type
-            redist_profile.priority = redist_filter_priority
-            redist_profile.action = redist_filter_action
-            redist_profile.create()
-            logger.info(
-                f"Interface {redist_filter_interface} added to Redistribution profile {redist_profile.name}"
-            )
-            
-            return redist_profile
-            
-        except PanDeviceError as e:
-            logger.error(f"Failed to configure Redistribution profile: {e}")
+        if not virtual_router:
+            logger.error(f"Invalid virtual router provided")
             return None
-
-    def add_interface_to_virtual_router(
-        self,
-        virtual_router: network.VirtualRouter,
-        vr_interfaces: List
-    ) -> bool:
-        """
-        Add a layer3 subinterface to a virtual router.
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
         try:
-            if not virtual_router:
-                logger.error("Invalid virtual router provided")
+            existing_redist_profile = network.RedistributionProfile(name)
+            virtual_router.add(existing_redist_profile)
+            existing_redist_profile.refresh(virtual_router)
+            logger.info(f"Redistribution profile '{existing_redist_profile.name}' already exists, updating...")
+            self.existing_objects.append(('redist_profile', existing_redist_profile.name))
+
+            for key, value in redist_profile_params.items():
+                if hasattr(existing_redist_profile, key):
+                    setattr(existing_redist_profile, key, value)
+
+            existing_redist_profile.apply()
+
+            if not existing_redist_profile:
                 return False
+        except:
+            logger.info(f"Redistribution profile '{name}' does not exist, creating...")
+            new_params = {"name": name}
+            new_params.update(redist_profile_params)
+            new_redist_profile = network.RedistributionProfile(**new_params)
+            virtual_router.add(new_redist_profile)
+            new_redist_profile.create()
+            self.created_objects.append(('redist_profile', new_redist_profile.name))
 
-            current_interfaces = getattr(virtual_router, 'interface', []) or []
-            
-            # Add interface if not already present
-            new_intfs = [i for i in vr_interfaces if i not in current_interfaces]
-
-            if new_intfs:
-                current_interfaces.extend(new_intfs)
-                virtual_router.interface = current_interfaces
-                virtual_router.create()
-                logger.info(
-                    f"Interfaces {new_intfs} added to virtual router {virtual_router.name}"
-                )
-            else:
-                logger.info(
-                    f"Interfaces {new_intfs} already exist in virtual router {virtual_router.name}"
-                )
-
-            return True
-
-        except PanDeviceError as e:
-            logger.error(f"Failed to add interface to virtual router: {e}")
-            return False
+            if not new_redist_profile:
+                return False
+        
+        return True
                 
     def network_operation(self, cfg_data) -> bool:
         try:
@@ -438,10 +408,10 @@ class PANetworkManager:
                 if object_type == 'layer3_subinterfaces':
                     for obj in objects:
                         parent_interface_name = obj.get('parent_interface_name')
-                        parent_exists, parent_interface = self.check_parent_interface_exists(parent_interface_name)
+                        #parent_exists, parent_interface = self.check_parent_interface_exists(parent_interface_name)
                                    
-                        if not parent_exists:
-                            parent_interface = self.create_parent_interface(parent_interface_name, 'layer3')
+                        #if not parent_exists:
+                        parent_interface = self.create_parent_interface(parent_interface_name, 'layer3')
 
                         if not parent_interface:
                             return False
@@ -454,40 +424,35 @@ class PANetworkManager:
 
                 if object_type == 'zones':
                     for zn in objects:
-                        zone_name = zn.get('zone_name')
-                        zone_params = {k: v for k, v in zn.items() if k != 'interfaces'}
-                        zone_interfaces = zn.get('interfaces')
-                        zn_exists, zone = self.check_zone_exists(zone_name)
-                        if not zn_exists:
-                            zone = self.create_zone(zone_params)
-                        if not zone:
-                            return False
+                        zone_name = zn.get('name')
+                        zone_params = {k: v for k, v in zn.items() if k != 'name'}
 
-                        # Add interface to zone
-                        if not self.add_interface_to_zone(zone, zone_interfaces):
-                            return False
+                        zone = self.create_zone(zone_name, zone_params)
+
 
                 if object_type == 'virtual_routers':
                     for vr in objects:
                         virtual_router_name = vr.get('virtual_router_name')
-                        vr_interfaces = vr.get('interfaces')
-                        vr_exists, virtual_router = self.check_virtual_router_exists(virtual_router_name)
-                        if not vr_exists:
-                            virtual_router = self.create_virtual_router(virtual_router_name)
+                        virtual_router_interface = vr.get('interface')
+                        redistribution_profiles = vr.get("redistribution_profiles", [])
+                        static_routes = vr.get("static_routes", [])
 
-                        if not virtual_router:
-                            return False
+                        virtual_router = self.create_virtual_router(virtual_router_name, virtual_router_interface)
 
-                        # Add interface to virtual router
-                        if not self.add_interface_to_virtual_router(virtual_router, vr_interfaces):
-                            return False
+                        if virtual_router:
 
-                        if "redistribution_profiles" in vr:
-                            for redist in vr["redistribution_profiles"]:
-                                redist_profile_params = {k: v for k, v in redist.items() if v}
-                                redist_profile = self.configure_redist_profile(virtual_router, redist_profile_params)
-                                if not redist_profile:
-                                    return False
+                            if redistribution_profiles:
+                                for redist in redistribution_profiles:
+                                    redist_profile_name = redist.get('name')
+                                    redist_profile_params = {k: v for k, v in redist.items() if k != 'name'}
+                                    redist_profile = self.create_redist_profile(virtual_router, redist_profile_name, redist_profile_params)
+
+                            if static_routes:
+                                for route in static_routes:
+                                    static_route_name = route.get('name')
+                                    static_route_params = {k: v for k, v in route.items() if k != 'name'}
+                                    static_route = self.create_static_route(virtual_router, static_route_name, static_route_params)
+
             
             # Commit changes if requested
             if self.commit_changes:
@@ -610,6 +575,8 @@ def main():
                 vsys=VSYS,
                 commit_changes=COMMIT
             )
+        else:
+            logger.error("Missing parameters required to connect PA-NGFW")
 
         
         # Configure interface and routing
