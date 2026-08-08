@@ -5,7 +5,7 @@
             "parent_interface_name": "ethernet1/4",
             "subinterfaces": [
                 {
-                    "vlan_tag": 100,
+                    "tag": 100,
                     "ip": ["192.168.103.1/24"],
                     "management_profile": "mgmt-profile-ping",
                     "comment": "Created by PANetworkManager script"
@@ -16,13 +16,13 @@
             "parent_interface_name": "ethernet1/5",
             "subinterfaces": [
                 {
-                    "vlan_tag": 200,
+                    "tag": 200,
                     "ip": ["192.168.104.1/24"],
                     "management_profile": "mgmt-profile-ping",
                     "comment": "Created by PANetworkManager script"
                 },
                 {
-                    "vlan_tag": 201,
+                    "tag": 201,
                     "ip": ["192.168.105.1/24"],
                     "management_profile": "mgmt-profile-ping",
                     "comment": "Created by PANetworkManager script"
@@ -32,9 +32,14 @@
     ],
     "zones": [
         {
-            "zone_name": "lab3",
-            "zone_mode": "layer3",
-            "interfaces": ["ethernet1/5.200", "ethernet1/5.201", "ethernet1/4.100"]
+            "name": "dev-untrust",
+            "mode": "layer3",
+            "interface": ["ethernet1/4.100"]
+        },
+        {
+            "name": "dev-trust",
+            "mode": "layer3",
+            "interface": ["ethernet1/5.200", "ethernet1/5.201"]
         }
     ],
     "virtual_routers": [
@@ -42,12 +47,30 @@
             "virtual_router_name": "vr-lab3",
             "redistribution_profiles":[
                 {
-                    "redist_profile_name": "redist-connect",
-                    "redist_filter_type": ["connect"],
-                    "redist_filter_interface": ["ethernet1/5.200", "ethernet1/5.201", "ethernet1/4.100"]
+                    "name": "redist-connect",
+                    "filter_type": ["connect"],
+                    "filter_interface": ["ethernet1/5.200", "ethernet1/5.201", "ethernet1/4.100"],
+                    "action": "redist",
+                    "priority": "1"
                 }
             ],
-            "interfaces": ["ethernet1/5.200", "ethernet1/5.201", "ethernet1/4.100"]
+            "interface": ["ethernet1/5.200", "ethernet1/5.201", "ethernet1/4.100"],
+            "static_routes": [
+                {
+                    "name": "default-route",
+                    "destination": "0.0.0.0/0",
+                    "nexthop_type": "ip-address",
+                    "nexthop": "192.168.103.254",
+                    "interface": "ethernet1/4.100"
+                },
+                {
+                    "name": "RT-192.168.200.0-24",
+                    "destination": "192.168.200.0/24",
+                    "nexthop_type": "ip-address",
+                    "nexthop": "192.168.104.254",
+                    "interface": "ethernet1/5.200"
+                }
+            ]
         }
     ]
 }
