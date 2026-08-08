@@ -38,15 +38,15 @@ class OperationType(Enum):
 
 class RuleType(Enum):
     """Rulebase type"""
-    PRE_RULE = "PreRulebase"
-    POST_RULE = "PostRulebase"
+    PRE_RULE = "pre-rulebase"
+    POST_RULE = "post-rulebase"
 
     @classmethod
     def from_string(cls, value: str) -> 'RuleType':
         try:
-            return cls(value)
+            return cls(value.lower())
         except ValueError:
-            raise ValueError(f"Invalid rulebase type: {value}. Must be 'PreRulebase' or 'PostRulebase'")
+            raise ValueError(f"Invalid rulebase type: {value}. Must be 'pre-rulebase' or 'post-rulebase'")
 
 class PanoramaRuleManager:
     """
@@ -93,7 +93,7 @@ class PanoramaRuleManager:
         Helper to fetch an existing security rule by name from the rulebase.
 
         Args:
-            rulebase_type (str): Rulebase type either 'PreRulebase' or 'PostRulebase'.
+            rulebase_type (str): Rulebase type either 'pre-rulebase' or 'post-rulebase'.
             rule_name (str): The name of the rule to find.
 
         Returns:
@@ -101,9 +101,9 @@ class PanoramaRuleManager:
         """
 
         # refreshall returns a list of all SecurityRule objects in the rulebase
-        if RuleType.from_string(rulebase_type).value == "PreRulebase":
+        if RuleType.from_string(rulebase_type).value == "pre-rulebase":
             rulebase = PreRulebase()
-        elif RuleType.from_string(rulebase_type).value == "PostRulebase":
+        elif RuleType.from_string(rulebase_type).value == "post-rulebase":
             rulebase = PostRulebase()
         self.scope.add(rulebase)
         existing_rules = SecurityRule.refreshall(rulebase)
@@ -131,7 +131,7 @@ class PanoramaRuleManager:
         }
 
         Args:
-            rulebase_type (str): Rulebase type either 'PreRulebase' or 'PostRulebase'.
+            rulebase_type (str): Rulebase type either 'pre-rulebase' or 'post-rulebase'.
             rule_params (dict): A dictionary of rule attributes.
         """
         rule_name = rule_params.get('name')
@@ -139,7 +139,7 @@ class PanoramaRuleManager:
         existing_rule = self._get_existing_rule(rulebase_type, rule_name)
 
         if existing_rule:
-            logger.info(f"Rule '{rule_name}' found in {rulebase_type.lower()}. Updating...")
+            logger.info(f"Rule '{existing_rule.name}' found in {rulebase_type.lower()}. Updating...")
             # Update the existing object's attributes with new values
             for key, value in rule_params.items():
                 if hasattr(existing_rule, key):
@@ -149,17 +149,17 @@ class PanoramaRuleManager:
                 # Apply the changes to Panorama
                 existing_rule.apply()
                 RuleAuditComment(existing_rule).update(self.audit_comment)
-                logger.info(f"Rule '{rule_name}' updated successfully in {rulebase_type.lower()}.")
+                logger.info(f"Rule '{existing_rule.name}' updated successfully in {rulebase_type.lower()}.")
                 return True
             except Exception as e:
-                logger.error(f"Failed to update rule: {e}")
+                logger.error(f"Failed to update rule '{rule_name}: {e}")
                 return False
         else:
             logger.info(f"Rule '{rule_name}' not found in {rulebase_type.lower()}. Creating...")
             # Create a new SecurityRule object
-            if RuleType.from_string(rulebase_type).value == "PreRulebase":
+            if RuleType.from_string(rulebase_type).value == "pre-rulebase":
                 rulebase = PreRulebase()
-            elif RuleType.from_string(rulebase_type).value == "PostRulebase":
+            elif RuleType.from_string(rulebase_type).value == "post-rulebase":
                 rulebase = PostRulebase()
             self.scope.add(rulebase)
             new_rule = SecurityRule(**rule_params)
@@ -169,10 +169,10 @@ class PanoramaRuleManager:
                 # Create the rule on Panorama
                 new_rule.create()
                 RuleAuditComment(new_rule).update(self.audit_comment)
-                logger.info(f"Rule '{rule_name}' created successfully in {rulebase_type.lower()}.")
+                logger.info(f"Rule '{new_rule.name}' created successfully in {rulebase_type.lower()}.")
                 return True
             except Exception as e:
-                logger.error(f"Failed to create rule: {e}")
+                logger.error(f"Failed to create rule '{rule_name}: {e}")
                 return False
 
     def move_rule(self, rulebase_type, rule_name, position, target_rule=None):
@@ -180,7 +180,7 @@ class PanoramaRuleManager:
         Moves a rule to a specific position within the rulebase.
 
         Args:
-            rulebase_type (str): Rulebase type either 'PreRulebase' or 'PostRulebase'.
+            rulebase_type (str): Rulebase type either 'pre-rulebase' or 'post-rulebase'.
             rule_name (str): The name of the rule to move.
             position (str): Position either 'before' or 'after'.
             target_rule (str): The name of target rule, which is required for 'before' or 'after' positions.
@@ -192,10 +192,10 @@ class PanoramaRuleManager:
 
         try:
             existing_rule.move(position, target_rule)
-            logger.info(f"Rule '{rule_name}' moved to {position} {target_rule} in {rulebase_type.lower()}.")
+            logger.info(f"Rule '{existing_rule.name}' moved to {position} {target_rule} in {rulebase_type.lower()}.")
             return True
         except Exception as e:
-            logger.error(f"Failed to move rule: {e}")
+            logger.error(f"Failed to move rule '{rule_name}': {e}")
             return False
 
     def delete_rule(self, rulebase_type, rule_name):
@@ -203,7 +203,7 @@ class PanoramaRuleManager:
         Deletes a rule from the rulebase.
 
         Args:
-            rulebase_type (str): Rulebase type either 'PreRulebase' or 'PostRulebase'.
+            rulebase_type (str): Rulebase type either 'pre-rulebase' or 'post-rulebase'.
             rule_name (str): The name of the rule to delete.
         """
         existing_rule = self._get_existing_rule(rulebase_type, rule_name)
@@ -216,7 +216,7 @@ class PanoramaRuleManager:
             logger.info(f"Rule '{rule_name}' deleted successfully from {rulebase_type.lower()}.")
             return True
         except Exception as e:
-            logger.error(f"Failed to delete rule: {e}")
+            logger.error(f"Failed to delete rule '{rule_name}': {e}")
             return False
 
     def list_rule(self, rulebase_type, rule_name):
@@ -224,7 +224,7 @@ class PanoramaRuleManager:
         Search a rule from the rulebase.
 
         Args:
-            rulebase_type (str): Rulebase type either 'PreRulebase' or 'PostRulebase'.
+            rulebase_type (str): Rulebase type either 'pre-rulebase' or 'post-rulebase'.
             rule_name (str): The name of the rule to search.
         """
         existing_rule = self._get_existing_rule(rulebase_type, rule_name)
@@ -273,7 +273,7 @@ class PanoramaRuleManager:
                             logger.error(f"Valid audit comment required to create/update rules")
                             return results
                         for rule_type, values in objects.items():
-                            if any(rule_type == rType for rType in [RuleType.from_string("PreRulebase").value, RuleType.from_string("PostRulebase").value]):
+                            if any(rule_type == rType for rType in [RuleType.from_string("pre-rulebase").value, RuleType.from_string("post-rulebase").value]):
                                 for rule in values.get('rulebase'):
                                     name = rule.get("name")
                                     if name:
@@ -299,7 +299,7 @@ class PanoramaRuleManager:
                     logger.info(f"Deleting rules in '{device_group_name}'")
                     logger.info("=" * 60)
                     for rule_type, values in objects.items():
-                        if any(rule_type == rType for rType in [RuleType.from_string("PreRulebase").value, RuleType.from_string("PostRulebase").value]):
+                        if any(rule_type == rType for rType in [RuleType.from_string("pre-rulebase").value, RuleType.from_string("post-rulebase").value]):
                             for rule in values.get('rulebase'):
                                 name = rule.get("name")
                                 if name:
@@ -312,7 +312,7 @@ class PanoramaRuleManager:
                     logger.info(f"Moving rules in '{device_group_name}'")
                     logger.info("=" * 60)
                     for rule_type, values in objects.items():
-                        if any(rule_type == rType for rType in [RuleType.from_string("PreRulebase").value, RuleType.from_string("PostRulebase").value]):
+                        if any(rule_type == rType for rType in [RuleType.from_string("pre-rulebase").value, RuleType.from_string("post-rulebase").value]):
                             if values.get('move'):
                                 position = values.get('move').get('position')
                                 target = values.get('move').get('target')
@@ -332,7 +332,7 @@ class PanoramaRuleManager:
                     logger.info(f"Searching rules in '{device_group_name}'")
                     logger.info("=" * 60)
                     for rule_type, values in objects.items():
-                        if any(rule_type == rType for rType in [RuleType.from_string("PreRulebase").value, RuleType.from_string("PostRulebase").value]):
+                        if any(rule_type == rType for rType in [RuleType.from_string("pre-rulebase").value, RuleType.from_string("post-rulebase").value]):
                             for rule in values.get('rulebase'):
                                 name = rule.get("name")
                                 if name:
