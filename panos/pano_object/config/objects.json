@@ -1,35 +1,47 @@
 {
-    "DG-Inet": {
-        "address_groups": [
+    "lab3-dg": {
+        "url_category": [
             {
-                "name": "database-servers", 
+                "name": "dev_sites",
+                "type": "URL List",
+                "url_value": ["*.dev.example.com/", "*.dev.com/"],
+                "description": "created by PAN SDK"
+            },
+            {
+                "name": "testing_sites",
+                "type": "URL List",
+                "url_value": ["*.test.local/", "test2.example.com/", "test1.example.com/"],
+                "description": "created by PAN SDK"
+            }
+        ]
+    },
+    "Shared": {
+        "address_group": [
+            {
+                "name": "grp-dev-db-servers", 
                 "member_names": ["db-server-01", "db-server-02"], 
                 "description": "created by PAN SDK"
             },
             {
-                "name": "prod-apps",
-                "filter_criteria": "tag.prod AND tag.app",
-                "description": "created by PAN SDK"
-            }
-        ],
-        "address_objects": [
-            {"name": "db-server-01", "ip_address": "192.168.2.10", "description": "created by PAN SDK"},
-            {"name": "db-server-02", "ip_address": "192.168.2.11", "description": "created by PAN SDK"},
-            {"name": "app-server-01", "fqdn": "test1.example.net", "description": "created by PAN SDK"}
-        ],
-        "url_categories": [
-            {
-                "name": "Production_Sites",
-                "url_list": ["*.prod.example.com/", "*.production.com/"],
+                "name": "grp-dev-app",
+                "filter_criteria": "tag.dev AND tag.app",
                 "description": "created by PAN SDK"
             },
             {
-                "name": "Testing_Sites",
-                "url_list": ["*.test.local/", "*.dev.local/", "test2.example.com/", "test1.example.com/"],
+                "name": "grp-rfc1918-ips",
+                "member_names": ["rfc1918-10.0.0.0", "rfc1918-172.16.0.0", "rfc1918-192.168.0.0"], 
                 "description": "created by PAN SDK"
             }
         ],
-        "service_objects": [
+        "address_object": [
+            {"name": "rfc1918-10.0.0.0", "type": "ip-netmask", "value": "10.0.0.0/8", "description": "created by PAN SDK"},
+            {"name": "rfc1918-172.16.0.0", "type": "ip-netmask", "value": "172.16.0.0/12", "description": "created by PAN SDK"},
+            {"name": "rfc1918-192.168.0.0", "type": "ip-netmask", "value": "192.168.0.0/16", "description": "created by PAN SDK"},
+            {"name": "db-server-01", "type": "ip-netmask", "value": "192.168.2.10", "description": "created by PAN SDK"},
+            {"name": "db-server-02", "type": "ip-netmask", "value": "192.168.2.11", "description": "created by PAN SDK"},
+            {"name": "app-server-01", "type": "fqdn", "value": "test1.example.net", "description": "created by PAN SDK"}
+        ],
+        "service_object": [
             {
                 "name": "tcp-3389",
                 "protocol": "tcp",
@@ -49,13 +61,13 @@
                 "description": "created by PAN SDK"
             }
         ],
-        "service_groups": [
+        "service_group": [
             {
                 "name": "grp-serv-test1", 
                 "value": ["tcp-3389", "tcp-5570-5572"]
             }
         ],
-        "edls": [
+        "external_dynamic_list": [
             {
                 "name": "edl-blocklist-ips",
                 "edl_type": "ip",
