@@ -68,6 +68,7 @@ class PanoramaRuleManager:
             commit_changes: Whether to commit changes
         """
         self.hostname = hostname
+        self.username = username
         self.audit_comment = audit_comment
         self.commit_changes = commit_changes
         self.scope = None
@@ -79,7 +80,7 @@ class PanoramaRuleManager:
             self.panorama = Panorama(hostname, api_username=username, api_password=password)
 
 
-    def _get_device_group(self, device_group_name):
+    def _get_device_group(self, device_group_name: str):
             """Find and return a device group object."""
             device_groups = DeviceGroup.refreshall(self.panorama)
     
@@ -88,7 +89,7 @@ class PanoramaRuleManager:
                     return dg
             return None
 
-    def _get_existing_rule(self, rulebase_type, rule_name):
+    def _get_existing_rule(self, rule_name: str):
         """
         Helper to fetch an existing security rule by name from the rulebase.
 
@@ -101,19 +102,20 @@ class PanoramaRuleManager:
         """
 
         # refreshall returns a list of all SecurityRule objects in the rulebase
-        if RuleType.from_string(rulebase_type).value == "pre-rulebase":
-            rulebase = PreRulebase()
-        elif RuleType.from_string(rulebase_type).value == "post-rulebase":
-            rulebase = PostRulebase()
-        self.scope.add(rulebase)
-        existing_rules = SecurityRule.refreshall(rulebase)
+        #if RuleType.from_string(rulebase_type).value == "pre-rulebase":
+        #    rulebase = PreRulebase()
+        #elif RuleType.from_string(rulebase_type).value == "post-rulebase":
+        #    rulebase = PostRulebase()
+
+        self.scope.add(self.rulebase)
+        existing_rules = SecurityRule.refreshall(self.rulebase)
         for rule in existing_rules:
             if rule.name == rule_name:
                 return rule
 
         return None
 
-    def create_or_update_rule(self, rulebase_type, **rule_params):
+    def create_or_update_rule(self, rule_params: Dict):
         """
         Creates a new rule or updates an existing one in the selected rulebase.
 
@@ -126,8 +128,10 @@ class PanoramaRuleManager:
             'destination': ['10.1.1.1'],
             'application': ['ssh'],
             'service': ['application-default'],
+            'group': 'spg-user-internet'
             'action': 'allow',
-            'description': 'allow mgmt ssh'
+            'description': 'allow mgmt ssh',
+            'disabled': 'False'
         }
 
         Args:
@@ -136,12 +140,13 @@ class PanoramaRuleManager:
         """
         rule_name = rule_params.get('name')
         # Check if the rule already exists
-        existing_rule = self._get_existing_rule(rulebase_type, rule_name)
+        existing_rule = self._get_existing_rule(rule_name)
 
         if existing_rule:
-            logger.info(f"Rule '{existing_rule.name}' found in {rulebase_type.lower()}. Updating...")
+            logger.info(f"Rule '{existing_rule.name}' already exists, updating...")
             # Update the existing object's attributes with new values
-            for key, value in rule_params.items():
+            update_params = {k: v for k, v in rule_params.items() if k != "name"}
+            for key, value in update_params.items():
                 if hasattr(existing_rule, key):
                     setattr(existing_rule, key, value)
             
@@ -149,85 +154,80 @@ class PanoramaRuleManager:
                 # Apply the changes to Panorama
                 existing_rule.apply()
                 RuleAuditComment(existing_rule).update(self.audit_comment)
-                logger.info(f"Rule '{existing_rule.name}' updated successfully in {rulebase_type.lower()}.")
+                logger.info(f"Rule '{existing_rule.name}' updated successfully.")
                 return True
             except Exception as e:
                 logger.error(f"Failed to update rule '{rule_name}: {e}")
                 return False
         else:
-            logger.info(f"Rule '{rule_name}' not found in {rulebase_type.lower()}. Creating...")
+            logger.info(f"Rule '{rule_name}' does not exist, creating...")
             # Create a new SecurityRule object
-            if RuleType.from_string(rulebase_type).value == "pre-rulebase":
-                rulebase = PreRulebase()
-            elif RuleType.from_string(rulebase_type).value == "post-rulebase":
-                rulebase = PostRulebase()
-            self.scope.add(rulebase)
+            self.scope.add(self.rulebase)
             new_rule = SecurityRule(**rule_params)
-            rulebase.add(new_rule)
+            self.rulebase.add(new_rule)
             
             try:
                 # Create the rule on Panorama
                 new_rule.create()
                 RuleAuditComment(new_rule).update(self.audit_comment)
-                logger.info(f"Rule '{new_rule.name}' created successfully in {rulebase_type.lower()}.")
+                logger.info(f"Rule '{new_rule.name}' created successfully.")
                 return True
             except Exception as e:
                 logger.error(f"Failed to create rule '{rule_name}: {e}")
                 return False
 
-    def move_rule(self, rulebase_type, rule_name, position, target_rule=None):
+    def move_rule(self, rule_name: str, move_params: Dict):
         """
         Moves a rule to a specific position within the rulebase.
 
+        The move_params dictionary should contain the standard parameters.
         Args:
-            rulebase_type (str): Rulebase type either 'pre-rulebase' or 'post-rulebase'.
             rule_name (str): The name of the rule to move.
-            position (str): Position either 'before' or 'after'.
-            target_rule (str): The name of target rule, which is required for 'before' or 'after' positions.
+            location (str): Location is 'top', 'bottom', 'before' or 'after'.
+            ref (str): The name of target rule, which is required for 'before' or 'after' locations.
         """
-        existing_rule = self._get_existing_rule(rulebase_type, rule_name)
+        existing_rule = self._get_existing_rule(rule_name)
         if not existing_rule:
-            logger.error(f"Rule '{rule_name}' not found in {rulebase_type.lower()}.")
+            logger.error(f"Rule '{rule_name}' does not exist.")
             return False
 
         try:
-            existing_rule.move(position, target_rule)
-            logger.info(f"Rule '{existing_rule.name}' moved to {position} {target_rule} in {rulebase_type.lower()}.")
+            existing_rule.move(**move_params)
+            logger.info(f"Rule '{existing_rule.name}' moved successfully.")
             return True
         except Exception as e:
             logger.error(f"Failed to move rule '{rule_name}': {e}")
             return False
 
-    def delete_rule(self, rulebase_type, rule_name):
+    def delete_rule(self, rule_name: str):
         """
         Deletes a rule from the rulebase.
 
         Args:
-            rulebase_type (str): Rulebase type either 'pre-rulebase' or 'post-rulebase'.
             rule_name (str): The name of the rule to delete.
         """
-        existing_rule = self._get_existing_rule(rulebase_type, rule_name)
+        existing_rule = self._get_existing_rule(rule_name)
         if not existing_rule:
-            logger.error(f"Rule '{rule_name}' not found in {rulebase_type.lower()}.")
+            logger.error(f"Rule '{rule_name}' does not exist.")
             return False
 
         try:
             existing_rule.delete()
-            logger.info(f"Rule '{rule_name}' deleted successfully from {rulebase_type.lower()}.")
+            logger.info(f"Rule '{rule_name}' deleted successfully.")
             return True
         except Exception as e:
             logger.error(f"Failed to delete rule '{rule_name}': {e}")
             return False
 
-    def list_rule(self, rulebase_type, rule_name):
+    def list_rule(self, rule_name: str):
         """
         Search a rule from the rulebase.
 
         Args:
-            rulebase_type (str): Rulebase type either 'pre-rulebase' or 'post-rulebase'.
             rule_name (str): The name of the rule to search.
         """
-        existing_rule = self._get_existing_rule(rulebase_type, rule_name)
+        existing_rule = self._get_existing_rule(rule_name)
+
         if existing_rule:
             logger.info(
                 existing_rule.about()
@@ -259,7 +259,7 @@ class PanoramaRuleManager:
                         logger.error(f"Error: '{device_group_name}' does not exist")
                         return results
                     self.scope = device_group
-                else:
+                elif device_group_name == "Shared":
                     self.scope = self.panorama
 
                 if operation == OperationType.from_string('create').value and objects:
@@ -270,27 +270,35 @@ class PanoramaRuleManager:
                     pattern = r"^(CHG|RITM|INC)[0-9]{7}"
                     if self.audit_comment:
                         if not re.fullmatch(pattern, self.audit_comment):
-                            logger.error(f"Valid audit comment required to create/update rules")
+                            logger.error(f"Invalid rule audit comment")
                             return results
+
                         for rule_type, values in objects.items():
-                            if any(rule_type == rType for rType in [RuleType.from_string("pre-rulebase").value, RuleType.from_string("post-rulebase").value]):
+
+                            self.rulebase = None
+
+                            if rule_type == RuleType.from_string("pre-rulebase").value:
+                                self.rulebase = PreRulebase()
+                            elif rule_type == RuleType.from_string("post-rulebase").value:
+                                self.rulebase = PostRulebase()
+
+                            if self.rulebase != None:
                                 for rule in values.get('rulebase'):
                                     name = rule.get("name")
                                     if name:
-                                        rule_params = {k: v for k, v in rule.items() if v}
-                                        
-                                        success = self.create_or_update_rule(rule_type, **rule_params)
+                                        rule_params = {k: v for k, v in rule.items()}
+                                        success = self.create_or_update_rule(rule_params)
 
                                         if values.get('move'):
-                                            position = values.get('move').get('position')
-                                            target = values.get('move').get('target')
-                                            if position and target:
-                                                success = self.move_rule(rule_type, name, position, target)
+                                            move_params = values.get('move')
+                                            success = self.move_rule(name, move_params)
 
                                         results[f"{rule_type.lower()}_{name}"] = success
-                                
+                            else:
+                                logger.error(f"Invalid rulebase {rule_type}")
+
                     else:
-                        logger.error(f"Valid audit comment required to create/update rules")
+                        logger.error(f"The rule audit comment is required to create/update rules")
                         return results
      
                 elif operation == OperationType.from_string('delete').value and objects:
@@ -299,32 +307,47 @@ class PanoramaRuleManager:
                     logger.info(f"Deleting rules in '{device_group_name}'")
                     logger.info("=" * 60)
                     for rule_type, values in objects.items():
-                        if any(rule_type == rType for rType in [RuleType.from_string("pre-rulebase").value, RuleType.from_string("post-rulebase").value]):
+
+                        self.rulebase = None
+
+                        if rule_type == RuleType.from_string("pre-rulebase").value:
+                            self.rulebase = PreRulebase()
+                        elif rule_type == RuleType.from_string("post-rulebase").value:
+                            self.rulebase = PostRulebase()
+
+                        if self.rulebase != None:
                             for rule in values.get('rulebase'):
                                 name = rule.get("name")
                                 if name:
-                                    success = self.delete_rule(rule_type, name)
+                                    success = self.delete_rule(name)
                                     results[f"{rule_type.lower()}_{name}"] = success
-    
+                        else:
+                            logger.error(f"Invalid rulebase {rule_type}")
+
                 elif operation == OperationType.from_string('move').value:
                     # Move rules
                     logger.info("=" * 60)
                     logger.info(f"Moving rules in '{device_group_name}'")
                     logger.info("=" * 60)
                     for rule_type, values in objects.items():
-                        if any(rule_type == rType for rType in [RuleType.from_string("pre-rulebase").value, RuleType.from_string("post-rulebase").value]):
-                            if values.get('move'):
-                                position = values.get('move').get('position')
-                                target = values.get('move').get('target')
-                                if position and target:
-                                    for rule in values.get('rulebase'):
-                                        name = rule.get("name")
-                                        if name:
-                                            success = self.move_rule(rule_type, name, position, target)
-                                            results[f"{rule_type.lower()}_{name}"] = success
-                                else:
-                                    logger.error("Missing required parameters to move rules")
-                                    return results
+                        self.rulebase = None
+
+                        if rule_type == RuleType.from_string("pre-rulebase").value:
+                            self.rulebase = PreRulebase()
+                        elif rule_type == RuleType.from_string("post-rulebase").value:
+                            self.rulebase = PostRulebase()
+
+                        if self.rulebase != None and values.get('move'):
+                            move_params = values.get('move')
+                            
+                            for rule in values.get('rulebase'):
+                                name = rule.get("name")
+                                if name:
+                                    success = self.move_rule(name, move_params)
+                                    results[f"{rule_type.lower()}_{name}"] = success
+
+                        else:
+                            logger.error(f"Invalid rulebase {rule_type} or missing move action")
 
                 elif operation == OperationType.from_string('list').value and objects:
                     # Search rules
@@ -332,11 +355,18 @@ class PanoramaRuleManager:
                     logger.info(f"Searching rules in '{device_group_name}'")
                     logger.info("=" * 60)
                     for rule_type, values in objects.items():
-                        if any(rule_type == rType for rType in [RuleType.from_string("pre-rulebase").value, RuleType.from_string("post-rulebase").value]):
+                        self.rulebase = None
+
+                        if rule_type == RuleType.from_string("pre-rulebase").value:
+                            self.rulebase = PreRulebase()
+                        elif rule_type == RuleType.from_string("post-rulebase").value:
+                            self.rulebase = PostRulebase()
+
+                        if self.rulebase != None:
                             for rule in values.get('rulebase'):
                                 name = rule.get("name")
                                 if name:
-                                    success = self.list_rule(rule_type, name)
+                                    success = self.list_rule(name)
                                     results[f"{rule_type.lower()}_{name}"] = success
 
 
@@ -380,8 +410,6 @@ def parse_arguments():
     parser.add_argument("--operation", "-o", choices=['create', 'delete', 'move', 'list'], 
                         nargs="?", const="list", default='list',
                         help="Operation commands to create/delete/move/list rulebase in Panorama Device Group. Default to 'list'")
-    parser.add_argument("--commit", action='store_true',
-                                help="Enable commit")
 
     # Authentication arguments (either apikey or username/password)
     auth = parser.add_mutually_exclusive_group(required=False)
@@ -393,10 +421,8 @@ def parse_arguments():
     # Option arguments
     parser.add_argument("--audit", type=str,
                         help="Audit comments on security rule")
-    parser.add_argument("--position", type=str, choices=['before', 'after'], 
-                        help="Places the rule directly above or below a specific target rule")
-    parser.add_argument("--target", type=str,
-                        help="The name of the target rule")
+    parser.add_argument("--commit", action='store_true',
+                                    help="Enable commit")
 
     return parser.parse_args()
 
@@ -412,7 +438,7 @@ def main():
     """
 
     args = parse_arguments()
-    basePath = Path.home() / 'pyenv3.9' / 'panos' / 'pano_project'
+    basePath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_project'
     filepath = f"{basePath}/config/{args.file}"
 
     PANORAMA_HOST = args.hostname
@@ -422,10 +448,8 @@ def main():
     OPERATION = args.operation
     AUDIT_COMMENT = args.audit or None
     COMMIT = args.commit
-    POSITION = args.position
-    TARGET = args.target
     VAULT = "panos_secrets.bin"
-    vaultpath = Path.home() / 'pyenv3.9' / 'secrets'
+    vaultpath = Path.home() / 'pyenv3.13' / 'secrets'
     cfg_data = {}
 
     # Get object data
