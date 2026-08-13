@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
 from enum import Enum
-from panos.panorama import Panorama, DeviceGroup, PanoramaCommit
+from panos.panorama import Panorama, DeviceGroup
 from panos.policies import PreRulebase, PostRulebase, SecurityRule, RuleAuditComment
 from panos.objects import (
     CustomUrlCategory,
@@ -1174,7 +1174,7 @@ def main():
     """
 
     args = parse_arguments()
-    basePath = Path.home() / 'pyenv3.9' / 'panos' / 'pano_project'
+    basePath = Path.home() / 'pyenv3.13' / 'panos' / 'pano_project'
     filepath = f"{basePath}/config/{args.file}"
 
     PANORAMA_HOST = args.hostname
@@ -1185,7 +1185,7 @@ def main():
     AUDIT_COMMENT = args.audit or None
     COMMIT = args.commit
     VAULT = "panos_secrets.bin"
-    vaultpath = Path.home() / 'pyenv3.9' / 'secrets'
+    vaultpath = Path.home() / 'pyenv3.13' / 'secrets'
     cfg_data = {}
 
     # Get object data
