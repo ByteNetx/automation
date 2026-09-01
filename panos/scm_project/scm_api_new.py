@@ -52,7 +52,6 @@ class ScopeType(Enum):
     FOLDER = "folder"
     SNIPPET = "snippet"
     DEVICE = "device"
-
     @classmethod
     def from_string(cls, value: str) -> 'ScopeType':
         try:
@@ -66,34 +65,21 @@ class ScmScope:
     """SCM configuration scope"""
     type: ScopeType
     value: str
-    
     def to_dict(self) -> Dict[str, str]:
         return {"type": self.type.value, "value": self.value}
-    
     def to_params(self) -> Dict[str, str]:
         return {self.type.value: self.value}
 
 
 class ScmAPI:
     def __init__(self, client_id: str, client_secret: str, tsg_id: str,
-                 scope: Union[Dict, ScmScope], config: Optional[ApiConfig] = None):
+                config: Optional[ApiConfig] = None):
         self.client_id = client_id
         self.client_secret = client_secret
         self.tsg_id = tsg_id
         self.config = config or ApiConfig()
 
-        if isinstance(scope, dict):
-            try:
-                scope_type = ScopeType.from_string(scope.get("type"))
-                self.scope = ScmScope(scope_type, scope.get("value"))
-            except ValueError as e:
-                logger.error(f"Invalid scope: {e}")
-                sys.exit(1)
-        elif isinstance(scope, ScmScope):
-            self.scope = scope
-        else:
-            logger.error("Scope must be a dict or ScmScope instance")
-            sys.exit(1)
+        self.scope = None
 
         self.token_cache = {
             "access_token": None,
@@ -107,7 +93,21 @@ class ScmAPI:
             "Content-Type": "application/json"
         })
         
-        logger.info(f"SCM API initialized with scope: {self.scope.type.value}={self.scope.value}")
+        logger.info(f"SCM API initialized")
+
+    def _get_scope(self, scope: Union[Dict, ScmScope]) -> str:
+        if isinstance(scope, dict):
+            try:
+                scope_type = ScopeType.from_string(scope.get("type"))
+                self.scope = ScmScope(scope_type, scope.get("value"))
+                return True
+            except ValueError as e:
+                return False
+        elif isinstance(scope, ScmScope):
+            self.scope = scope
+            return True
+        else:
+            return False
 
     def _get_endpoint(self, object_type: str) -> str:
         """
@@ -205,9 +205,10 @@ class ScmAPI:
     def create_object(self, endpoint: str, data: Dict) -> Dict:
         """Create a single object (network or security)."""
         try:
-            data.update(self.scope.to_params())
+            cfg_data = {k: v for k,v in data.items() if v}
+            cfg_data.update(self.scope.to_params())
             logger.info(f"Creating {data.get('name')} in {self.scope.type.value}={self.scope.value}")
-            return self._make_api_request("POST", endpoint, data=data)
+            return self._make_api_request("POST", endpoint, data=cfg_data)
         except Exception as e:
             logger.error(f"Failed to create {data.get('name')}: {e}")
             return {}
@@ -215,52 +216,53 @@ class ScmAPI:
     def update_object(self, endpoint: str, data: Dict) -> Dict:
         """Update a single object (network or security)."""
         try:
-            name = data.get("name")
-            data.update(self.scope.to_params())
-            existing = self.list_object(endpoint, name)
+            params = {k: v for k,v in data.items() if k == 'name' or k == 'position'}
+            params.update(self.scope.to_params())
+
+            new_data = {k: v for k,v in data.items() if v}
+            new_data.update(self.scope.to_params())
+            existing = self.list_object(endpoint, params)
             if existing:
-                uuid = existing[0].get("id")
+                uuid = existing.get('data')[0].get("id") if 'data' in existing else existing.get("id")
                 new_endpoint = f"{endpoint}/{uuid}"
-                logger.info(f"Updating {name} in {self.scope.type.value}={self.scope.value}")
-                return self._make_api_request("PUT", new_endpoint, data=data)
+                logger.info(f"Updating {data.get('name')} in {self.scope.type.value}={self.scope.value}")
+                return self._make_api_request("PUT", new_endpoint, data=new_data)
             else:
-                logger.warning(f"'{name}' not found for updating")
+                logger.warning(f"'{data.get('name')}' not found for updating")
                 return {}
         except Exception as e:
-            logger.error(f"Failed to update {name }: {e}")
+            logger.error(f"Failed to update {data.get('name') }: {e}")
             return {}
 
-    def delete_object(self, endpoint: str, name: str) -> Dict:
+    def delete_object(self, endpoint: str, params: Dict) -> Dict:
         """Delete a single object by name."""
         try:
-            existing = self.list_object(endpoint, name)
+            existing = self.list_object(endpoint, params)
             if existing:
-                uuid = existing[0].get("id")
+                uuid = existing.get('data')[0].get("id") if 'data' in existing else existing.get("id")
                 new_endpoint = f"{endpoint}/{uuid}"
-                logger.info(f"Deleting {name} in {self.scope.type.value}={self.scope.value}")
+                logger.info(f"Deleting {params.get('name')} in {self.scope.type.value}={self.scope.value}")
                 return self._make_api_request("DELETE", new_endpoint)
             else:
-                logger.warning(f"'{name}' not found for deletion")
+                logger.warning(f"'{params.get('name')}' not found for deletion")
                 return {}
         except Exception as e:
-            logger.error(f"Failed to delete {name}: {e}")
+            logger.error(f"Failed to delete {params.get('name')}: {e}")
             return {}
 
-    def list_object(self, endpoint: str, name: Optional[str] = None,
+    def list_object(self, endpoint: str, params: Dict = None,
                     limit: int = 200, offset: int = 0) -> List[Dict]:
         """Retrieve objects of a given type, optionally filtered by name."""
 
-        params = self.scope.to_params()
-        if name:
-            params.update({"name": name})
+        params.update(self.scope.to_params())
         params.update({"limit": limit, "offset": offset})
     
         try:
-            logger.info(f"Fetching {name} in {self.scope.type.value}={self.scope.value}")
+            logger.info(f"Fetching {params.get('name')} in {self.scope.type.value}={self.scope.value}")
             response = self._make_api_request("GET", endpoint, params=params)
-            return response.get("data", [])
+            return response
         except Exception as e:
-            logger.error(f"Failed to find {name}: {e}")
+            logger.error(f"Failed to find {params.get('name')}: {e}")
             return []
 
     def bulk_operation(self, operation: OperationType, config_data: Dict) -> List[Dict]:
@@ -270,33 +272,206 @@ class ScmAPI:
         """
         results = []
 
-        for object_type, objects in config_data.items():
-            endpoint = self._get_endpoint(object_type)
-            if not endpoint:
-                logger.info(f"Invalid object type: '{object_type}'")
+        for scope_name, data in config_data.items():
+            scope = {
+                "type": data.get('type'),
+                "value": scope_name
+            }
+            if not self._get_scope(scope):
+                logger.error(f"Invalid configuration scope: {data.get('type')}: '{scope_name}'")
                 continue
-                
-            for obj in objects:
-                if operation == OperationType.CREATE:
-                    resp = self.create_object(endpoint, obj)
-                elif operation == OperationType.UPDATE:
-                    resp = self.update_object(endpoint, obj)
-                elif operation == OperationType.DELETE:
-                    name = obj.get("name")
-                    if not name:
-                        logger.error(f"Cannot delete {object_type}: object missing 'name'")
-                        continue
-                    resp = self.delete_object(endpoint, name)
-                elif operation == OperationType.LIST:
-                    name = obj.get("name")
-                    if not name:
-                        logger.error(f"Cannot search {object_type}: object missing 'name'")
-                        continue
-                    resp = self.list_object(endpoint, name)
 
-                results.append(resp)
+            object_data = {k: v for k,v in data.items() if k != "type"}
+
+            if any(operation == op for op in [OperationType.CREATE, OperationType.UPDATE, OperationType.LIST]):
+                if "ethernet-interfaces" in object_data:
+    
+                    endpoint = self._get_endpoint("ethernet-interfaces")
+                    for obj in object_data.get("ethernet-interfaces"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.UPDATE:
+                            resp = self.update_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search interface: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+        
+                        results.append(resp)
+    
+                if "layer3-subinterfaces" in object_data:
+    
+                    endpoint = self._get_endpoint("layer3-subinterfaces")
+                    for obj in object_data.get("layer3-subinterfaces"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.UPDATE:
+                            resp = self.update_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search subinterface: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+        
+                        results.append(resp)
+    
+                if "logical-routers" in object_data:
+    
+                    endpoint = self._get_endpoint("logical-routers")
+                    for obj in object_data.get("logical-routers"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.UPDATE:
+                            resp = self.update_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search logical router: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+        
+                        results.append(resp)
+    
+                if "zones" in object_data:
+    
+                    endpoint = self._get_endpoint("zones")
+                    for obj in object_data.get("zones"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.UPDATE:
+                            resp = self.update_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search zone: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+
+                        results.append(resp)
+    
+                if "addresses" in object_data:
+    
+                    endpoint = self._get_endpoint("addresses")
+                    for obj in object_data.get("addresses"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.UPDATE:
+                            resp = self.update_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search address: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+
+                        results.append(resp)
+    
+                if "security-rules" in object_data:
+    
+                    endpoint = self._get_endpoint("security-rules")
+                    for obj in object_data.get("security-rules"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.UPDATE:
+                            resp = self.update_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search security rule: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+
+                        results.append(resp)
+
+            elif operation == OperationType.DELETE:
+                if "logical-routers" in object_data:
+    
+                    endpoint = self._get_endpoint("logical-routers")
+                    for obj in object_data.get("logical-routers"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete logical router: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+        
+                        results.append(resp)
+    
+                if "zones" in object_data:
+    
+                    endpoint = self._get_endpoint("zones")
+                    for obj in object_data.get("zones"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete zone: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+
+                        results.append(resp)
+
+                if "layer3-subinterfaces" in object_data:
+    
+                    endpoint = self._get_endpoint("layer3-subinterfaces")
+                    for obj in object_data.get("layer3-subinterfaces"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete subinterface: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+        
+                        results.append(resp)
+
+                if "ethernet-interfaces" in object_data:
+    
+                    endpoint = self._get_endpoint("ethernet-interfaces")
+                    for obj in object_data.get("ethernet-interfaces"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete interface: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+        
+                        results.append(resp)
+
+                if "security-rules" in object_data:
+    
+                    endpoint = self._get_endpoint("security-rules")
+                    for obj in object_data.get("security-rules"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete security rule: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+
+                        results.append(resp)
+
+                if "addresses" in object_data:
+    
+                    endpoint = self._get_endpoint("addresses")
+                    for obj in object_data.get("addresses"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete address: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+
+                        results.append(resp)
+
         return results
-
 
 def get_secret(vault, vaultpath):
     from encryption import CredentialManager
@@ -334,21 +509,17 @@ def main():
 
     VAULT = "panos_secrets.bin"
     CLIENT_ID = ""
-    TSG_ID = ""
+    TSG_ID = "tsg_id:"
     credentials = get_secret(VAULT, vaultpath)
     CLIENT_SECRET = credentials.get(CLIENT_ID)
 
-    SCOPE = {}
     config_data = {}
 
     if os.path.isfile(filepath):
         with open(filepath, 'r', encoding='utf-8-sig') as f:
-            data = json.load(f)
-    
-        SCOPE = data.get("scope", {})
-        config_data = {k: v for k, v in data.items() if k != "scope"}
+            config_data = json.load(f)
 
-    if not SCOPE or not config_data:
+    if not config_data:
         logger.error("Missing the configuration scope and/or objects.")
         sys.exit()
 
@@ -358,7 +529,7 @@ def main():
         logger.error(f"Invalid operation command: {args.operation}")
         sys.exit()
 
-    scm_client = ScmAPI(CLIENT_ID, CLIENT_SECRET, TSG_ID, SCOPE)
+    scm_client = ScmAPI(CLIENT_ID, CLIENT_SECRET, TSG_ID)
     output = scm_client.bulk_operation(OPERATION, config_data)
 
     print(json.dumps(output, indent=2))
