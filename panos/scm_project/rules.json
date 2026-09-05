@@ -1,0 +1,151 @@
+{
+    "Shared": {
+        "type": "folder",
+        "addresses": [
+            {
+                "name": "aws-use-pa-mgmt-10.187.0.0/27",
+                "description": "Created by SCM API 0903",
+                "ip_netmask": "10.187.0.0/27"
+            },
+            {
+                "name": "aws-use-pa-mgmt-10.187.128.0/27",
+                "description": "Created by SCM API 0903",
+                "ip_netmask": "10.187.128.0/27"
+            },
+            {
+                "name": "users-10.10.0.0/24",
+                "description": "Created by SCM API 0903",
+                "ip_netmask": "10.10.0.0/24"
+            },
+            {
+                "name": "fqdn-test.example.net",
+                "description": "Created by SCM API 0903",
+                "fqdn": "test.example.net"
+            },
+            {
+                "name": "rfc1918-10-8",
+                "description": "Created by SCM API 0903",
+                "ip_netmask": "10.0.0.0/8"
+            },
+            {
+                "name": "rfc1918-172.16-12",
+                "description": "Created by SCM API 0903",
+                "ip_netmask": "172.16.0.0/12"
+            }
+        ],
+        "address-groups": [
+            {
+                "name": "grp-rfc1918",
+                "description": "Created by SCM API 0903",
+                "static": [
+                    "rfc1918-10-8",
+                    "rfc1918-172.16-12"
+                ]
+            }
+        ]
+    },
+    "TIER1-EW-OB": {
+        "type": "folder",
+        "security-rules": [
+            {
+                "position": "post",
+                "policy_type": "Security",
+                "name": "allow-apps-users-to-pa-mgmt",
+                "disabled": false,
+                "description": "Created by SCM API 0903",
+                "tag": [],
+                "from": [
+                    "private"
+                ],
+                "to": [
+                    "private"
+                ],
+                "source": [
+                    "users-10.10.0.0/24"
+                ],
+                "negate_source": false,
+                "source_user": [
+                    "any"
+                ],
+                "destination": [
+                    "aws-use-pa-mgmt-10.187.0.0/27",
+                    "aws-use-pa-mgmt-10.187.128.0/27"
+                ],
+                "service": [
+                    "application-default"
+                ],
+                "negate_destination": false,
+                "source_hip": [
+                    "any"
+                ],
+                "destination_hip": [
+                    "any"
+                ],
+                "application": [
+                    "ssh",
+                    "ssl"
+                ],
+                "category": [
+                    "any"
+                ],
+                "profile_setting": {
+                    "group": [
+                        "best-practice"
+                    ]
+                },
+                "log_setting": "logging",
+                "log_start": false,
+                "log_end": true
+            },
+            {
+                "position": "post",
+                "policy_type": "Security",
+                "name": "allow-apps-users-to-internet",
+                "disabled": false,
+                "description": "Created by SCM API 0903",
+                "tag": [],
+                "from": [
+                    "private"
+                ],
+                "to": [
+                    "public"
+                ],
+                "source": [
+                    "users-10.10.0.0/24"
+                ],
+                "negate_source": false,
+                "source_user": [
+                    "any"
+                ],
+                "destination": [
+                    "grp-rfc1918"
+                ],
+                "service": [
+                    "application-default"
+                ],
+                "negate_destination": true,
+                "source_hip": [
+                    "any"
+                ],
+                "destination_hip": [
+                    "any"
+                ],
+                "application": [
+                    "web-browsing",
+                    "ssl"
+                ],
+                "category": [
+                    "any"
+                ],
+                "profile_setting": {
+                    "group": [
+                        "best-practice"
+                    ]
+                },
+                "log_setting": "logging",
+                "log_start": false,
+                "log_end": true
+            }
+        ]
+    }
+}
