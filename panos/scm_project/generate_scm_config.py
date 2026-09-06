@@ -25,8 +25,8 @@ def build_address(row):
         "name": row['name'],
         "description": row.get('description', 'Created by SCM API 0903')
     }
-    ip_netmask = row.get('ip_netmask')
-    fqdn = row.get('fqdn')
+    ip_netmask = row.get('ip_netmask', '')
+    fqdn = row.get('fqdn', '')
     if ip_netmask:
         addr["ip_netmask"] = ip_netmask
     elif fqdn:
@@ -43,6 +43,63 @@ def build_address_group(row):
         "description": row.get('description', 'Created by SCM API 0903'),
         "static": members
     }
+
+def build_service(row):
+    """Build an service object from a row of the Services sheet."""
+    serv = {
+        "name": row['name'],
+        "description": row.get('description', 'Created by SCM API 0903'),
+    }
+    protocol = row.get('protocol', '')
+    port = row.get('port', '')
+    if protocol and port:
+        serv["protocol"] = {
+            protocol: {"port": port}
+        }
+    else:
+        raise ValueError(f"Service '{row['name']}' must have both protocol and port.")
+    return serv
+
+def build_service_group(row):
+    """Build an service-group object from a row of the ServiceGroups sheet."""
+    members = parse_list(row.get('members', ''))
+    return {
+        "name": row['name'],
+        "description": row.get('description', 'Created by SCM API 0903'),
+        "members": members
+    }
+
+def build_edl(row):
+    """Build an EDL object from a row of the EDLs sheet."""
+    edl = {
+        "name": row['name']
+    }
+    edl_type = row.get('type', '')
+    username = row.get('username', '')
+    password = row.get('password', '')
+    recurring = row.get('recurring', 'hourly')
+    if edl_type:
+        if username and password:
+            auth = {
+                  "username": row.get('username', 'None'),
+                  "password": row.get('password', 'None')
+                }
+        else:
+            auth = {}
+        edl["type"] = {
+            edl_type: {
+                "description": row.get('description', 'Created by SCM API 0903'),
+                "url": row.get('url'),
+                "certificate_profile": row.get('certificate_profile', 'None'),
+                "auth": auth,
+                "recurring": {
+                  recurring: {}
+                }
+            }
+        }
+    else:
+        raise ValueError(f"EDL '{row['name']}' must be, ip, domain or url.")
+    return edl
 
 def build_security_rule(row):
     """Build a security-rule object from a row of the SecurityRules sheet."""
@@ -82,14 +139,32 @@ def generate_json_from_excel(excel_path, output_path=None):
     # Read sheets
     try:
         addresses_df = pd.read_excel(excel_path, sheet_name='Addresses')
+        addresses_df.fillna('', inplace=True)
     except ValueError:
         addresses_df = pd.DataFrame()  # empty if sheet missing
     try:
-        groups_df = pd.read_excel(excel_path, sheet_name='AddressGroups')
+        addr_groups_df = pd.read_excel(excel_path, sheet_name='AddressGroups')
+        addr_groups_df.fillna('', inplace=True)
     except ValueError:
-        groups_df = pd.DataFrame()
+        addr_groups_df = pd.DataFrame()
+    try:
+        services_df = pd.read_excel(excel_path, sheet_name='Services')
+        services_df.fillna('', inplace=True)
+    except ValueError:
+        services_df = pd.DataFrame()  # empty if sheet missing
+    try:
+        serv_groups_df = pd.read_excel(excel_path, sheet_name='ServiceGroups')
+        serv_groups_df.fillna('', inplace=True)
+    except ValueError:
+        serv_groups_df = pd.DataFrame()
+    try:
+        edls_df = pd.read_excel(excel_path, sheet_name='EDLs')
+        edls_df.fillna('', inplace=True)
+    except ValueError:
+        edls_df = pd.DataFrame()  # empty if sheet missing
     try:
         rules_df = pd.read_excel(excel_path, sheet_name='SecurityRules')
+        rules_df.fillna('', inplace=True)
     except ValueError:
         rules_df = pd.DataFrame()
 
@@ -102,29 +177,76 @@ def generate_json_from_excel(excel_path, output_path=None):
         if not folder:
             continue
         if folder not in result:
-            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "security-rules": []}
+            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
         addr = build_address(row)
         result[folder]["addresses"].append(addr)
 
     # Process address groups
-    for _, row in groups_df.iterrows():
+    for _, row in addr_groups_df.iterrows():
         folder = row.get('folder')
         if not folder:
             continue
         if folder not in result:
-            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "security-rules": []}
+            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
         grp = build_address_group(row)
         result[folder]["address-groups"].append(grp)
 
-    # Process security rules
-    for _, row in rules_df.iterrows():
+    # Process service
+    for _, row in services_df.iterrows():
         folder = row.get('folder')
         if not folder:
             continue
         if folder not in result:
-            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "security-rules": []}
-        rule = build_security_rule(row)
-        result[folder]["security-rules"].append(rule)
+            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+        serv = build_service(row)
+        result[folder]["services"].append(serv)
+
+    # Process service groups
+    for _, row in serv_groups_df.iterrows():
+        folder = row.get('folder')
+        if not folder:
+            continue
+        if folder not in result:
+            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+        grp = build_service_group(row)
+        result[folder]["service-groups"].append(grp)
+
+    # Process edl
+    for _, row in edls_df.iterrows():
+        folder = row.get('folder')
+        snippet = row.get('snippet', '')
+        if not folder and not snippet:
+            continue
+        if folder:
+            if folder not in result:
+                result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+            edl = build_edl(row)
+            result[folder]["external-dynamic-lists"].append(edl)
+        elif snippet:
+            if snippet not in result:
+                result[snippet] = {"type": "snippet", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+            edl = build_edl(row)
+            result[snippet]["external-dynamic-lists"].append(edl)
+
+    # Process security rules
+    for _, row in rules_df.iterrows():
+        folder = row.get('folder', '')
+        snippet = row.get('snippet', '')
+        if not folder and not snippet:
+            continue
+        if folder:
+            if folder not in result:
+                result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+            rule = build_security_rule(row)
+            result[folder]["security-rules"].append(rule)
+        elif snippet:
+            if snippet not in result:
+                result[snippet] = {"type": "snippet", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+            rule = build_security_rule(row)
+            result[snippet]["security-rules"].append(rule)
+
+    for scope, objects in result.items():
+        result[scope] = {k: v for k, v in objects.items() if v}
 
     # Write JSON
     with open(output_path, 'w') as f:
