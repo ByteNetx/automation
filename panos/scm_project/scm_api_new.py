@@ -29,7 +29,6 @@ class OperationType(Enum):
     CREATE = "create"
     DELETE = "delete"
     LIST = "list"
-    UPDATE = "update"
     
     @classmethod
     def from_string(cls, value: str) -> 'OperationType':
@@ -175,7 +174,21 @@ class ScmAPI:
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Status: {e.response.status_code}, Body: {e.response.text}")
             return None
+
+    def _get_existing_object(self, endpoint: str, params: Dict = None,
+                    limit: int = 200, offset: int = 0) -> List[Dict]:
+        """Retrieve objects of a given type, if existing."""
+
+        params.update(self.scope.to_params())
+        params.update({"limit": limit, "offset": offset})
     
+        try:
+            logger.info(f"Fetching {params.get('name')} in {self.scope.type.value}={self.scope.value}")
+            response = self._make_api_request("GET", endpoint, params=params)
+            return response
+        except:
+            return None
+   
     def _make_api_request(self, method: str, endpoint: str, data: Optional[Dict] = None,
                           params: Optional[Dict] = None) -> Dict:
         """Make an API request to SCM."""
@@ -203,41 +216,30 @@ class ScmAPI:
             raise
 
     def create_object(self, endpoint: str, data: Dict) -> Dict:
-        """Create a single object (network or security)."""
-        try:
-            cfg_data = {k: v for k,v in data.items() if v}
-            cfg_data.update(self.scope.to_params())
-            logger.info(f"Creating {data.get('name')} in {self.scope.type.value}={self.scope.value}")
-            return self._make_api_request("POST", endpoint, data=cfg_data)
-        except Exception as e:
-            logger.error(f"Failed to create {data.get('name')}: {e}")
-            return {}
-
-    def update_object(self, endpoint: str, data: Dict) -> Dict:
-        """Update a single object (network or security)."""
+        """create/update a single object (network or security)."""
         try:
             params = {k: v for k,v in data.items() if k == 'name' or k == 'position'}
             params.update(self.scope.to_params())
+            cfg_data = {k: v for k,v in data.items() if v}
+            cfg_data.update(self.scope.to_params())
 
-            new_data = {k: v for k,v in data.items() if v}
-            new_data.update(self.scope.to_params())
-            existing = self.list_object(endpoint, params)
+            existing = self._get_existing_object(endpoint, params)
             if existing:
                 uuid = existing.get('data')[0].get("id") if 'data' in existing else existing.get("id")
                 new_endpoint = f"{endpoint}/{uuid}"
                 logger.info(f"Updating {data.get('name')} in {self.scope.type.value}={self.scope.value}")
-                return self._make_api_request("PUT", new_endpoint, data=new_data)
+                return self._make_api_request("PUT", new_endpoint, data=cfg_data)
             else:
-                logger.warning(f"'{data.get('name')}' not found for updating")
-                return {}
+                logger.info(f"Creating {data.get('name')} in {self.scope.type.value}={self.scope.value}")
+                return self._make_api_request("POST", endpoint, data=cfg_data)
         except Exception as e:
-            logger.error(f"Failed to update {data.get('name') }: {e}")
+            logger.error(f"Failed to create/update {data.get('name') }: {e}")
             return {}
 
     def delete_object(self, endpoint: str, params: Dict) -> Dict:
         """Delete a single object by name."""
         try:
-            existing = self.list_object(endpoint, params)
+            existing = self._get_existing_object(endpoint, params)
             if existing:
                 uuid = existing.get('data')[0].get("id") if 'data' in existing else existing.get("id")
                 new_endpoint = f"{endpoint}/{uuid}"
@@ -283,15 +285,13 @@ class ScmAPI:
 
             object_data = {k: v for k,v in data.items() if k != "type"}
 
-            if any(operation == op for op in [OperationType.CREATE, OperationType.UPDATE, OperationType.LIST]):
+            if any(operation == op for op in [OperationType.CREATE, OperationType.LIST]):
                 if "ethernet-interfaces" in object_data:
     
                     endpoint = self._get_endpoint("ethernet-interfaces")
                     for obj in object_data.get("ethernet-interfaces"):
                         if operation == OperationType.CREATE:
                             resp = self.create_object(endpoint, obj)
-                        elif operation == OperationType.UPDATE:
-                            resp = self.update_object(endpoint, obj)
                         elif operation == OperationType.LIST:
                             name = obj.get("name")
                             if not name:
@@ -308,8 +308,6 @@ class ScmAPI:
                     for obj in object_data.get("layer3-subinterfaces"):
                         if operation == OperationType.CREATE:
                             resp = self.create_object(endpoint, obj)
-                        elif operation == OperationType.UPDATE:
-                            resp = self.update_object(endpoint, obj)
                         elif operation == OperationType.LIST:
                             name = obj.get("name")
                             if not name:
@@ -326,8 +324,6 @@ class ScmAPI:
                     for obj in object_data.get("logical-routers"):
                         if operation == OperationType.CREATE:
                             resp = self.create_object(endpoint, obj)
-                        elif operation == OperationType.UPDATE:
-                            resp = self.update_object(endpoint, obj)
                         elif operation == OperationType.LIST:
                             name = obj.get("name")
                             if not name:
@@ -344,8 +340,6 @@ class ScmAPI:
                     for obj in object_data.get("zones"):
                         if operation == OperationType.CREATE:
                             resp = self.create_object(endpoint, obj)
-                        elif operation == OperationType.UPDATE:
-                            resp = self.update_object(endpoint, obj)
                         elif operation == OperationType.LIST:
                             name = obj.get("name")
                             if not name:
@@ -362,8 +356,6 @@ class ScmAPI:
                     for obj in object_data.get("addresses"):
                         if operation == OperationType.CREATE:
                             resp = self.create_object(endpoint, obj)
-                        elif operation == OperationType.UPDATE:
-                            resp = self.update_object(endpoint, obj)
                         elif operation == OperationType.LIST:
                             name = obj.get("name")
                             if not name:
@@ -373,15 +365,29 @@ class ScmAPI:
                             resp = self.list_object(endpoint, params)
 
                         results.append(resp)
+
+                if "address-groups" in object_data:
     
+                    endpoint = self._get_endpoint("address-groups")
+                    for obj in object_data.get("address-groups"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search address: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+
+                        results.append(resp)
+
                 if "security-rules" in object_data:
     
                     endpoint = self._get_endpoint("security-rules")
                     for obj in object_data.get("security-rules"):
                         if operation == OperationType.CREATE:
                             resp = self.create_object(endpoint, obj)
-                        elif operation == OperationType.UPDATE:
-                            resp = self.update_object(endpoint, obj)
                         elif operation == OperationType.LIST:
                             name = obj.get("name")
                             if not name:
@@ -494,8 +500,8 @@ def parse_arguments():
     group = parser.add_argument_group(title="List configuration in SCM scope")
     group.add_argument("--scope", "-s", nargs=2,
                        help="Scope to search. 'type' 'name'")
-    group.add_argument("--search", nargs=2,
-                       help="Object to search. 'endpoint' 'name'")
+    group.add_argument("--endpoint", type=str,
+                       help="Object to search.")
 
     return parser.parse_args()
 
@@ -515,25 +521,36 @@ def main():
 
     config_data = {}
 
-    if os.path.isfile(filepath):
+    scm_client = ScmAPI(CLIENT_ID, CLIENT_SECRET, TSG_ID)
+
+    if args.scope and args.search:
+        scope = {
+            "type": args.scope[0],
+            "value": args.scope[1]
+        }
+        endpoint = scm_client._get_endpoint(args.search[0])
+        if endpoint and scm_client._get_scope(scope):
+            logger.info(f"Fetching {args.search[0]} in {args.scope[0]}-{args.scope[1]}")
+            output = scm_client.list_object(endpoint)
+            print(json.dumps(output, indent=2))
+
+    elif os.path.isfile(filepath):
         with open(filepath, 'r', encoding='utf-8-sig') as f:
             config_data = json.load(f)
 
-    if not config_data:
-        logger.error("Missing the configuration scope and/or objects.")
-        sys.exit()
+        if not config_data:
+            logger.error("Missing the configuration scope and/or objects.")
+            sys.exit()
 
-    try:
-        OPERATION = OperationType.from_string(args.operation)
-    except:
-        logger.error(f"Invalid operation command: {args.operation}")
-        sys.exit()
+        try:
+            OPERATION = OperationType.from_string(args.operation)
+        except:
+            logger.error(f"Invalid operation command: {args.operation}")
+            sys.exit()
 
-    scm_client = ScmAPI(CLIENT_ID, CLIENT_SECRET, TSG_ID)
-    output = scm_client.bulk_operation(OPERATION, config_data)
+        result = scm_client.bulk_operation(OPERATION, config_data)
 
-    print(json.dumps(output, indent=2))
-
+        print(json.dumps(result, indent=2))
 
 if __name__ == "__main__":
     main()
