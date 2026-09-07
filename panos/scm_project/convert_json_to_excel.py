@@ -26,17 +26,19 @@ def json_to_excel(json_path, excel_path=None):
 
     # Prepare rows for each sheet
     addresses_rows = []
-    groups_rows = []
+    addr_groups_rows = []
+    services_rows = []
+    serv_groups_rows = []
     rules_rows = []
 
-    for folder, content in data.items():
-        if content.get('type') != 'folder':
-            continue  # skip non-folder entries if any
+    for scope, content in data.items():
+        if content.get('type') != 'folder' and content.get('type') != 'snippet':
+            continue  # skip non-scope entries if any
 
         # Addresses
         for addr in content.get('addresses', []):
             row = {
-                'folder': folder,
+                content.get('type'): scope,
                 'name': addr.get('name', ''),
                 'description': addr.get('description', ''),
                 'ip_netmask': addr.get('ip_netmask', ''),
@@ -47,19 +49,42 @@ def json_to_excel(json_path, excel_path=None):
         # Address Groups
         for grp in content.get('address-groups', []):
             row = {
-                'folder': folder,
+                content.get('type'): scope,
                 'name': grp.get('name', ''),
                 'description': grp.get('description', ''),
                 'static': flatten_list(grp.get('static', []))
             }
-            groups_rows.append(row)
+            addr_groups_rows.append(row)
+
+        # Services
+        for serv in content.get('services', []):
+            proto_name = list(serv.get('protocol').keys())[0]
+            port_num = serv.get('protocol').get(proto_name).get('port')
+            row = {
+                content.get('type'): scope,
+                'name': serv.get('name', ''),
+                'description': serv.get('description', ''),
+                'protocol': proto_name,
+                "port": port_num
+            }
+            services_rows.append(row)
+
+        # Service Groups
+        for grp in content.get('service-groups', []):
+            row = {
+                content.get('type'): scope,
+                'name': grp.get('name', ''),
+                'description': grp.get('description', ''),
+                'members': flatten_list(grp.get('members', []))
+            }
+            serv_groups_rows.append(row)
 
         # Security Rules
         for rule in content.get('security-rules', []):
             # Extract profile_setting group
             profile_group = rule.get('profile_setting', {}).get('group', [])
             row = {
-                'folder': folder,
+                content.get('type'): scope,
                 'position': rule.get('position', 'post'),
                 'policy_type': rule.get('policy_type', 'Security'),
                 'name': rule.get('name', ''),
@@ -87,13 +112,17 @@ def json_to_excel(json_path, excel_path=None):
 
     # Create DataFrames
     df_addresses = pd.DataFrame(addresses_rows)
-    df_groups = pd.DataFrame(groups_rows)
+    df_addr_groups = pd.DataFrame(addr_groups_rows)
+    df_services = pd.DataFrame(services_rows)
+    df_serv_groups = pd.DataFrame(serv_groups_rows) 
     df_rules = pd.DataFrame(rules_rows)
 
     # Write to Excel
     with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
         df_addresses.to_excel(writer, sheet_name='Addresses', index=False)
-        df_groups.to_excel(writer, sheet_name='AddressGroups', index=False)
+        df_addr_groups.to_excel(writer, sheet_name='AddressGroups', index=False)
+        df_services.to_excel(writer, sheet_name='Services', index=False)
+        df_serv_groups.to_excel(writer, sheet_name='ServiceGroups', index=False)
         df_rules.to_excel(writer, sheet_name='SecurityRules', index=False)
 
     print(f"Excel file generated successfully at {excel_path}")
