@@ -1,52 +1,42 @@
 {
-  "TIER1-EW-OB": {
-    "type": "folder",
-    "ethernet-interfaces": [
-      {
-        "name": "$AWS_PA_PRIVATE_IF",
-        "default_value": "ethernet1/1",
-        "layer3": {
-          "dhcp_client": {
-            "create_default_route": false,
-            "enable": true,{
     "Shared": {
         "type": "folder",
         "addresses": [
             {
                 "name": "aws-use-pa-mgmt-10.187.0.0/27",
-                "description": "Created by SCM API 0903",
+                "description": "Created by SCM API",
                 "ip_netmask": "10.187.0.0/27"
             },
             {
                 "name": "aws-use-pa-mgmt-10.187.128.0/27",
-                "description": "Created by SCM API 0903",
+                "description": "Created by SCM API",
                 "ip_netmask": "10.187.128.0/27"
             },
             {
                 "name": "users-10.10.0.0/24",
-                "description": "Created by SCM API 0903",
+                "description": "Created by SCM API",
                 "ip_netmask": "10.10.0.0/24"
             },
             {
                 "name": "fqdn-test.example.net",
-                "description": "Created by SCM API 0903",
+                "description": "Created by SCM API",
                 "fqdn": "test.example.net"
             },
             {
                 "name": "rfc1918-10-8",
-                "description": "Created by SCM API 0903",
+                "description": "Created by SCM API",
                 "ip_netmask": "10.0.0.0/8"
             },
             {
                 "name": "rfc1918-172.16-12",
-                "description": "Created by SCM API 0903",
+                "description": "Created by SCM API",
                 "ip_netmask": "172.16.0.0/12"
             }
         ],
         "address-groups": [
             {
                 "name": "grp-rfc1918",
-                "description": "Created by SCM API 0903",
+                "description": "Created by SCM API",
                 "static": [
                     "rfc1918-10-8",
                     "rfc1918-172.16-12"
@@ -56,7 +46,7 @@
         "services": [
             {
                 "name": "svc-tcp-443",
-                "description": "Created by SCM API 0903",
+                "description": "Created by SCM API",
                 "protocol": {
                     "tcp": {
                         "port": 443
@@ -65,7 +55,7 @@
             },
             {
                 "name": "svc-udp-3389",
-                "description": "Created by SCM API 0903",
+                "description": "Created by SCM API",
                 "protocol": {
                     "udp": {
                         "port": 3389
@@ -76,7 +66,7 @@
         "service-groups": [
             {
                 "name": "grp-uses-svc",
-                "description": "Created by SCM API 0903",
+                "description": "Created by SCM API",
                 "members": [
                     "svc-tcp-443",
                     "svc-udp-3389"
@@ -91,7 +81,7 @@
                 "name": "edl-customer1-ip",
                 "type": {
                     "ip": {
-                        "description": "Created by SCM API 0903",
+                        "description": "Created by SCM API",
                         "url": "http://example.com/customer1-ips.txt",
                         "certificate_profile": "",
                         "auth": {},
@@ -102,14 +92,24 @@
                 }
             }
         ],
+        "url-categories": [
+            {
+                "name": "uat-urls",
+                "description": "Created by SCM API",
+                "type": "URL List",
+                "list": [
+                    "uat1.example.com/",
+                    "uat2.example.com/",
+                    "uat3.example.com/"
+                ]
+            }
+        ],
         "security-rules": [
             {
                 "position": "pre",
                 "policy_type": "Security",
                 "name": "block-known-malicious-ip-out",
-                "disabled": false,
-                "description": "Created by SCM API 0904",
-                "tag": [],
+                "description": "Created by SCM API",
                 "from": [
                     "private"
                 ],
@@ -119,7 +119,6 @@
                 "source": [
                     "users-10.10.0.0/24"
                 ],
-                "negate_source": false,
                 "source_user": [
                     "any"
                 ],
@@ -129,7 +128,6 @@
                 "service": [
                     "any"
                 ],
-                "negate_destination": false,
                 "source_hip": [
                     "any"
                 ],
@@ -146,7 +144,6 @@
                     "group": []
                 },
                 "log_setting": "logging",
-                "log_start": false,
                 "log_end": true
             }
         ]
@@ -158,9 +155,7 @@
                 "position": "post",
                 "policy_type": "Security",
                 "name": "allow-apps-users-to-pa-mgmt",
-                "disabled": false,
-                "description": "Created by SCM API 0903",
-                "tag": [],
+                "description": "Created by SCM API",
                 "from": [
                     "private"
                 ],
@@ -170,7 +165,6 @@
                 "source": [
                     "users-10.10.0.0/24"
                 ],
-                "negate_source": false,
                 "source_user": [
                     "any"
                 ],
@@ -181,7 +175,6 @@
                 "service": [
                     "application-default"
                 ],
-                "negate_destination": false,
                 "source_hip": [
                     "any"
                 ],
@@ -201,16 +194,13 @@
                     ]
                 },
                 "log_setting": "logging",
-                "log_start": false,
                 "log_end": true
             },
             {
                 "position": "post",
                 "policy_type": "Security",
                 "name": "allow-apps-users-to-internet",
-                "disabled": false,
-                "description": "Created by SCM API 0903",
-                "tag": [],
+                "description": "Created by SCM API",
                 "from": [
                     "private"
                 ],
@@ -220,7 +210,6 @@
                 "source": [
                     "users-10.10.0.0/24"
                 ],
-                "negate_source": false,
                 "source_user": [
                     "any"
                 ],
@@ -250,151 +239,8 @@
                     ]
                 },
                 "log_setting": "logging",
-                "log_start": false,
                 "log_end": true
             }
         ]
     }
-}
-            "send_hostname": {
-              "enable": true,
-              "hostname": "system-hostname"
-            }
-          },
-          "interface_management_profile": "health-checks",
-          "lldp": {
-            "enable": false
-          }
-        },
-        "link_state": "auto"
-      },
-      {
-        "name": "$AWS_PA_PUBLIC_IF",
-        "default_value": "ethernet1/2",
-        "layer3": {
-          "dhcp_client": {
-            "create_default_route": true,
-            "enable": true,
-            "send_hostname": {
-              "enable": true,
-              "hostname": "system-hostname"
-            }
-          },
-          "lldp": {
-            "enable": false
-          }
-        }
-      }
-    ],
-    "layer3-subinterfaces": [
-      {
-        "name": "$AWS_PA_PRIVATE_IF.20",
-        "parent_interface": "$AWS_PA_PRIVATE_IF",
-        "comment": "Create by SCM API 0831",
-        "tag": 20,
-        "interface_management_profile": "",
-        "dhcp_client": {
-          "create_default_route": false,
-          "default_route_metric": 10,
-          "enable": true,
-          "send_hostname": {
-            "enable": false,
-            "hostname": "system-hostname"
-          }
-        }
-      },
-      {
-        "name": "$AWS_PA_PRIVATE_IF.30",
-        "parent_interface": "$AWS_PA_PRIVATE_IF",
-        "comment": "Create by SCM API 0831",
-        "tag": 30,
-        "dhcp_client": {
-          "create_default_route": false,
-          "default_route_metric": 10,
-          "enable": true,
-          "send_hostname": {
-            "enable": false,
-            "hostname": "system-hostname"
-          }
-        }
-      }
-    ],
-    "logical-routers": [
-      {
-        "name": "LR-T1-EW-OB",
-        "routing_stack": "advanced",
-        "vrf": [
-          {
-            "interface": [
-              "$AWS_PA_PUBLIC_IF",
-              "$AWS_PA_PRIVATE_IF",
-              "$AWS_PA_PRIVATE_IF.20",
-              "$AWS_PA_PRIVATE_IF.30"
-            ],
-            "name": "default",
-            "routing_table": {
-              "ip": {
-                "static_route": [
-                  {
-                    "destination": "0.0.0.0/0",
-                    "interface": "$AWS_PA_PUBLIC_IF",
-                    "metric": 10,
-                    "name": "default-route",
-                    "nexthop": {
-                      "ip_address": "$AWS_PA_PUBLIC_GW_IP"
-                    }
-                  },
-                  {
-                    "destination": "10.0.0.0/8",
-                    "interface": "$AWS_PA_PRIVATE_IF",
-                    "metric": 10,
-                    "name": "aws-spokes",
-                    "nexthop": {
-                      "ip_address": "$AWS_PA_PRIVATE_GW_IP"
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        ]
-      }
-    ],
-    "zones": [
-      {
-        "name": "private",
-        "network": {
-          "enable_packet_buffer_protection": true,
-          "layer3": [
-            "$AWS_PA_PRIVATE_IF.20",
-            "$AWS_PA_PRIVATE_IF.30"
-          ],
-          "log_setting": "Cortex Data Lake",
-          "zone_protection_profile": "best-practice"
-        }
-      },
-      {
-        "name": "internal",
-        "network": {
-          "enable_packet_buffer_protection": true,
-          "layer3": [
-            "$AWS_PA_PRIVATE_IF"
-          ],
-          "log_setting": "Cortex Data Lake",
-          "zone_protection_profile": "best-practice"
-        }
-      },
-      {
-        "name": "public",
-        "network": {
-          "enable_packet_buffer_protection": true,
-          "layer3": [
-            "$AWS_PA_PUBLIC_IF"
-          ],
-          "log_setting": "Cortex Data Lake",
-          "zone_protection_profile": "best-practice"
-        }
-      }
-    ]
-  }
 }
