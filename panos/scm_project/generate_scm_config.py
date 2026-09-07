@@ -23,7 +23,7 @@ def build_address(row):
     """Build an address object from a row of the Addresses sheet."""
     addr = {
         "name": row['name'],
-        "description": row.get('description', 'Created by SCM API 0903')
+        "description": row.get('description', 'Created by SCM API') if row.get('description') else 'Created by SCM API'
     }
     ip_netmask = row.get('ip_netmask', '')
     fqdn = row.get('fqdn', '')
@@ -33,22 +33,25 @@ def build_address(row):
         addr["fqdn"] = fqdn
     else:
         raise ValueError(f"Address '{row['name']}' must have either ip_netmask or fqdn.")
+    addr = {k: v for k, v in addr.items() if v}
     return addr
 
 def build_address_group(row):
     """Build an address-group object from a row of the AddressGroups sheet."""
     members = parse_list(row.get('static', ''))
-    return {
+    addr_group = {
         "name": row['name'],
-        "description": row.get('description', 'Created by SCM API 0903'),
+        "description": row.get('description', 'Created by SCM API') if row.get('description') else 'Created by SCM API',
         "static": members
     }
+    addr_group = {k: v for k, v in addr_group.items() if v}
+    return addr_group
 
 def build_service(row):
     """Build an service object from a row of the Services sheet."""
     serv = {
         "name": row['name'],
-        "description": row.get('description', 'Created by SCM API 0903'),
+        "description": row.get('description', 'Created by SCM API') if row.get('description') else 'Created by SCM API',
     }
     protocol = row.get('protocol', '')
     port = row.get('port', '')
@@ -58,16 +61,19 @@ def build_service(row):
         }
     else:
         raise ValueError(f"Service '{row['name']}' must have both protocol and port.")
+    serv = {k: v for k, v in serv.items() if v}
     return serv
 
 def build_service_group(row):
     """Build an service-group object from a row of the ServiceGroups sheet."""
     members = parse_list(row.get('members', ''))
-    return {
+    serv_group = {
         "name": row['name'],
-        "description": row.get('description', 'Created by SCM API 0903'),
+        "description": row.get('description', 'Created by SCM API') if row.get('description') else 'Created by SCM API',
         "members": members
     }
+    serv_group = {k: v for k, v in serv_group.items() if v}
+    return serv_group
 
 def build_edl(row):
     """Build an EDL object from a row of the EDLs sheet."""
@@ -88,7 +94,7 @@ def build_edl(row):
             auth = {}
         edl["type"] = {
             edl_type: {
-                "description": row.get('description', 'Created by SCM API 0903'),
+                "description": row.get('description', 'Created by SCM API') if row.get('description') else 'Created by SCM API',
                 "url": row.get('url'),
                 "certificate_profile": row.get('certificate_profile', 'None'),
                 "auth": auth,
@@ -99,7 +105,20 @@ def build_edl(row):
         }
     else:
         raise ValueError(f"EDL '{row['name']}' must be, ip, domain or url.")
+    edl = {k: v for k, v in edl.items() if v}
     return edl
+
+def build_url(row):
+    """Build a custom url object from a row of the URLs sheet."""
+    url_list = parse_list(row.get('list', ''))
+    url = {
+        "name": row['name'],
+        "description": row.get('description', 'Created by SCM API') if row.get('description') else 'Created by SCM API',
+        "type": row.get('type', 'URL List'),
+        "list": url_list
+    }
+    url = {k: v for k, v in url.items() if v}
+    return url
 
 def build_security_rule(row):
     """Build a security-rule object from a row of the SecurityRules sheet."""
@@ -108,7 +127,7 @@ def build_security_rule(row):
         "policy_type": row.get('policy_type', 'Security'),
         "name": row['name'],
         "disabled": parse_boolean(row.get('disabled', False)),
-        "description": row.get('description', 'Created by SCM API 0903'),
+        "description": row.get('description', 'Created by SCM API') if row.get('description') else 'Created by SCM API',
         "tag": parse_list(row.get('tag', '')),
         "from": parse_list(row.get('from', 'any')),
         "to": parse_list(row.get('to', 'any')),
@@ -129,6 +148,7 @@ def build_security_rule(row):
         "log_start": parse_boolean(row.get('log_start', False)),
         "log_end": parse_boolean(row.get('log_end', True))
     }
+    rule = {k: v for k, v in rule.items() if v}
     return rule
 
 def generate_json_from_excel(excel_path, output_path=None):
@@ -163,6 +183,11 @@ def generate_json_from_excel(excel_path, output_path=None):
     except ValueError:
         edls_df = pd.DataFrame()  # empty if sheet missing
     try:
+        urls_df = pd.read_excel(excel_path, sheet_name='URLs')
+        urls_df.fillna('', inplace=True)
+    except ValueError:
+        urls_df = pd.DataFrame()  # empty if sheet missing
+    try:
         rules_df = pd.read_excel(excel_path, sheet_name='SecurityRules')
         rules_df.fillna('', inplace=True)
     except ValueError:
@@ -177,7 +202,7 @@ def generate_json_from_excel(excel_path, output_path=None):
         if not folder:
             continue
         if folder not in result:
-            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "url-categories": [], "security-rules": []}
         addr = build_address(row)
         result[folder]["addresses"].append(addr)
 
@@ -187,7 +212,7 @@ def generate_json_from_excel(excel_path, output_path=None):
         if not folder:
             continue
         if folder not in result:
-            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "url-categories": [], "security-rules": []}
         grp = build_address_group(row)
         result[folder]["address-groups"].append(grp)
 
@@ -197,7 +222,7 @@ def generate_json_from_excel(excel_path, output_path=None):
         if not folder:
             continue
         if folder not in result:
-            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "url-categories": [], "security-rules": []}
         serv = build_service(row)
         result[folder]["services"].append(serv)
 
@@ -207,7 +232,7 @@ def generate_json_from_excel(excel_path, output_path=None):
         if not folder:
             continue
         if folder not in result:
-            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+            result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "url-categories": [], "security-rules": []}
         grp = build_service_group(row)
         result[folder]["service-groups"].append(grp)
 
@@ -219,14 +244,31 @@ def generate_json_from_excel(excel_path, output_path=None):
             continue
         if folder:
             if folder not in result:
-                result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+                result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "url-categories": [], "security-rules": []}
             edl = build_edl(row)
             result[folder]["external-dynamic-lists"].append(edl)
         elif snippet:
             if snippet not in result:
-                result[snippet] = {"type": "snippet", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "security-rules": []}
+                result[snippet] = {"type": "snippet", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "url-categories": [], "security-rules": []}
             edl = build_edl(row)
             result[snippet]["external-dynamic-lists"].append(edl)
+
+    # Process url
+    for _, row in urls_df.iterrows():
+        folder = row.get('folder')
+        snippet = row.get('snippet', '')
+        if not folder and not snippet:
+            continue
+        if folder:
+            if folder not in result:
+                result[folder] = {"type": "folder", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "url-categories": [], "security-rules": []}
+            url = build_url(row)
+            result[folder]["url-categories"].append(url)
+        elif snippet:
+            if snippet not in result:
+                result[snippet] = {"type": "snippet", "addresses": [], "address-groups": [], "services": [], "service-groups": [], "external-dynamic-lists": [], "url-categories": [], "security-rules": []}
+            url = build_url(row)
+            result[snippet]["url-categories"].append(url)
 
     # Process security rules
     for _, row in rules_df.iterrows():
