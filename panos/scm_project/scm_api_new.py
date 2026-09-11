@@ -252,7 +252,7 @@ class ScmAPI:
             logger.error(f"Failed to delete {params.get('name')}: {e}")
             return {}
 
-    def list_object(self, endpoint: str, params: Dict = None,
+    def list_object(self, endpoint: str, params: Dict = {},
                     limit: int = 200, offset: int = 0) -> List[Dict]:
         """Retrieve objects of a given type, optionally filtered by name."""
 
@@ -260,7 +260,7 @@ class ScmAPI:
         params.update({"limit": limit, "offset": offset})
     
         try:
-            logger.info(f"Fetching {params.get('name')} in {self.scope.type.value}={self.scope.value}")
+            logger.info(f"Fetching objcts in {self.scope.type.value}={self.scope.value}")
             response = self._make_api_request("GET", endpoint, params=params)
             return response
         except Exception as e:
@@ -375,7 +375,71 @@ class ScmAPI:
                         elif operation == OperationType.LIST:
                             name = obj.get("name")
                             if not name:
-                                logger.error(f"Cannot search address: object missing 'name'")
+                                logger.error(f"Cannot search address group: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+
+                        results.append(resp)
+
+                if "services" in object_data:
+    
+                    endpoint = self._get_endpoint("services")
+                    for obj in object_data.get("services"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search service: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+
+                        results.append(resp)
+
+                if "service-groups" in object_data:
+    
+                    endpoint = self._get_endpoint("service-groups")
+                    for obj in object_data.get("service-groups"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search service group: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+
+                        results.append(resp)
+
+                if "url-categories" in object_data:
+    
+                    endpoint = self._get_endpoint("url-categories")
+                    for obj in object_data.get("url-categories"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search URL: object missing 'name'")
+                                continue
+                            params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                            resp = self.list_object(endpoint, params)
+
+                        results.append(resp)
+
+                if "external-dynamic-lists" in object_data:
+    
+                    endpoint = self._get_endpoint("external-dynamic-lists")
+                    for obj in object_data.get("external-dynamic-lists"):
+                        if operation == OperationType.CREATE:
+                            resp = self.create_object(endpoint, obj)
+                        elif operation == OperationType.LIST:
+                            name = obj.get("name")
+                            if not name:
+                                logger.error(f"Cannot search EDL: object missing 'name'")
                                 continue
                             params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
                             resp = self.list_object(endpoint, params)
@@ -464,6 +528,19 @@ class ScmAPI:
 
                         results.append(resp)
 
+                if "address-groups" in object_data:
+    
+                    endpoint = self._get_endpoint("address-groups")
+                    for obj in object_data.get("address-groups"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete address group: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+
+                        results.append(resp)
+
                 if "addresses" in object_data:
     
                     endpoint = self._get_endpoint("addresses")
@@ -471,6 +548,58 @@ class ScmAPI:
                         name = obj.get("name")
                         if not name:
                             logger.error(f"Cannot delete address: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+
+                        results.append(resp)
+
+                if "service-groups" in object_data:
+    
+                    endpoint = self._get_endpoint("service-groups")
+                    for obj in object_data.get("service-groups"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete service group: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+
+                        results.append(resp)
+
+                if "services" in object_data:
+    
+                    endpoint = self._get_endpoint("services")
+                    for obj in object_data.get("services"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete service: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+
+                        results.append(resp)
+
+                if "url-categories" in object_data:
+    
+                    endpoint = self._get_endpoint("url-categories")
+                    for obj in object_data.get("url-categories"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete URL: object missing 'name'")
+                            continue
+                        params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
+                        resp = self.delete_object(endpoint, params)
+
+                        results.append(resp)
+
+                if "external-dynamic-lists" in object_data:
+    
+                    endpoint = self._get_endpoint("external-dynamic-lists")
+                    for obj in object_data.get("external-dynamic-lists"):
+                        name = obj.get("name")
+                        if not name:
+                            logger.error(f"Cannot delete EDL: object missing 'name'")
                             continue
                         params = {k: v for k,v in obj.items() if k == 'name' or k == 'position'}
                         resp = self.delete_object(endpoint, params)
@@ -514,8 +643,8 @@ def main():
     vaultpath = Path.home() / 'pyenv3.9' / 'secrets'
 
     VAULT = "panos_secrets.bin"
-    CLIENT_ID = ""
-    TSG_ID = "tsg_id:"
+    CLIENT_ID = "tyu-API@1533830390.iam.panserviceaccount.com"
+    TSG_ID = "tsg_id:1533830390"
     credentials = get_secret(VAULT, vaultpath)
     CLIENT_SECRET = credentials.get(CLIENT_ID)
 
@@ -523,14 +652,15 @@ def main():
 
     scm_client = ScmAPI(CLIENT_ID, CLIENT_SECRET, TSG_ID)
 
-    if args.scope and args.search:
+    if args.scope and args.endpoint:
         scope = {
             "type": args.scope[0],
             "value": args.scope[1]
         }
-        endpoint = scm_client._get_endpoint(args.search[0])
+        endpoint = scm_client._get_endpoint(args.endpoint)
+
         if endpoint and scm_client._get_scope(scope):
-            logger.info(f"Fetching {args.search[0]} in {args.scope[0]}-{args.scope[1]}")
+            logger.info(f"Fetching {args.endpoint} in {args.scope[0]}-{args.scope[1]}")
             output = scm_client.list_object(endpoint)
             print(json.dumps(output, indent=2))
 
