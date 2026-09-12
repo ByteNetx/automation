@@ -1105,7 +1105,7 @@ class PanoramaManager:
                                 success = self.move_rule(name, move_params)
                                 results[f"post-rulebase_{name}"] = success
     
-            if any(operation == op for op in [OperationType.from_string('create').value, OperationType.from_string('delete').value]) and results:
+            if any(operation == op for op in [OperationType.from_string('create').value, OperationType.from_string('delete').value,  OperationType.from_string('move').value]) and results:
                 # Commit changes if requested
                 confirm = [k for k, v in results.items() if v is False]
                 if self.commit_changes and not confirm:
