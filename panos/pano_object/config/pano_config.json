@@ -1,0 +1,141 @@
+{
+    "audit_comment": "CHG1234569",
+    "Shared": {
+        "address_object": [
+            {"name": "rfc1918-10.0.0.0", "type": "ip-netmask", "value": "10.0.0.0/8", "description": "created by PAN SDK"},
+            {"name": "rfc1918-172.16.0.0", "type": "ip-netmask", "value": "172.16.0.0/12", "description": "created by PAN SDK"},
+            {"name": "rfc1918-192.168.0.0", "type": "ip-netmask", "value": "192.168.0.0/16", "description": "created by PAN SDK"},
+            {"name": "db-server-01", "type": "ip-netmask", "value": "192.168.2.10", "description": "created by PAN SDK"},
+            {"name": "db-server-02", "type": "ip-netmask", "value": "192.168.2.11", "description": "created by PAN SDK"},
+            {"name": "app-server-01", "type": "fqdn", "value": "test1.example.net", "description": "created by PAN SDK"}
+        ],
+        "address_group": [
+            {
+                "name": "grp-dev-db-servers", 
+                "member_names": ["db-server-01", "db-server-02"], 
+                "description": "created by PAN SDK"
+            },
+            {
+                "name": "grp-dev-app",
+                "filter_criteria": "tag.dev AND tag.app",
+                "description": "created by PAN SDK"
+            },
+            {
+                "name": "grp-rfc1918-ips",
+                "member_names": ["rfc1918-10.0.0.0", "rfc1918-172.16.0.0", "rfc1918-192.168.0.0"], 
+                "description": "created by PAN SDK"
+            }
+        ],
+        "service_object": [
+            {
+                "name": "tcp-3389",
+                "protocol": "tcp",
+                "destination_port": "3389",
+                "description": "created by PAN SDK"
+            },
+            {
+                "name": "tcp-5570-5572",
+                "protocol": "tcp",
+                "destination_port": "5570-5572",
+                "description": "created by PAN SDK"
+            },
+            {
+                "name": "tcp-9997",
+                "protocol": "tcp",
+                "destination_port": "9997",
+                "description": "created by PAN SDK"
+            }
+        ],
+        "service_group": [
+            {
+                "name": "grp-serv-test1", 
+                "value": ["tcp-3389", "tcp-5570-5572"]
+            }
+        ],
+        "external_dynamic_list": [
+            {
+                "name": "edl-blocklist-ips",
+                "edl_type": "ip",
+                "source": "https://example.com/PADBL/edl_blocklist_ips.txt",
+                "repeat": "hourly",
+                "description": "created by PAN SDK"
+            },
+            {
+                "name": "edl-blocklist-domain",
+                "edl_type": "domain",
+                "source": "https://example.com/PADBL/edl_blocklist_domain.txt",
+                "repeat": "hourly",
+                "description": "created by PAN SDK"
+            },
+            {
+                "name": "edl-blocklist-url",
+                "edl_type": "url",
+                "source": "https://example.com/PADBL/edl_blocklist_url.txt",
+                "repeat": "five-minute",
+                "description": "created by PAN SDK"
+            }
+        ],
+        "pre-rulebase": [
+            {
+                "name": "block-dev-to-internet",
+                "fromzone": ["lab3-inside"],
+                "tozone": ["outside"],
+                "source": ["grp-dev-db-servers"],
+                "destination": ["grp-rfc1918-ips"],
+                "negate_destination": "True",
+                "application": ["any"],
+                "service": ["application-default"],
+                "action": "allow",
+                "log_setting": "logging",
+                "description": "Created by panos SDK"
+            }
+        ]
+    },
+    "lab3-dg": {
+        "url_category": [
+            {
+                "name": "dev_sites",
+                "type": "URL List",
+                "url_value": ["*.dev.example.com/", "*.dev.com/"],
+                "description": "created by PAN SDK"
+            },
+            {
+                "name": "testing_sites",
+                "type": "URL List",
+                "url_value": ["*.test.local/", "test2.example.com/", "test1.example.com/"],
+                "description": "created by PAN SDK"
+            }
+        ],
+        "post-rulebase": [
+            {
+                "name": "Test-Rule1",
+                "fromzone": ["lab3"],
+                "tozone": ["lab3-untrust"],
+                "source": ["app-server-01"],
+                "destination": ["any"],
+                "category": ["testing_sites"],
+                "application": ["ping", "snmp", "syslog"],
+                "service": ["application-default"],
+                "action": "allow",
+                "log_setting": "logging",
+                "description": "Created by panos SDK",
+                "move": { "location": "before", "ref": "allow-lab3-out" }
+            },
+            {
+                "name": "Test-Rule2",
+                "fromzone": ["lab3"],
+                "tozone": ["lab3-untrust"],
+                "source": ["app-server-01"],
+                "destination": ["grp-rfc1918-ips"],
+                "negate_destination": "True",
+                "application": ["ssl", "web-browsing"],
+                "service": ["application-default"],
+                "action": "allow",
+                "log_setting": "logging",
+                "description": "Created by panos SDK",
+                "disabled": "True",
+                "move": { "location": "before", "ref": "allow-lab3-out" }
+            }
+        ]
+    }
+}
